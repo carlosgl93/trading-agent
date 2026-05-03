@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, Play, Crown, Minus, CheckCircle, AlertCircle, Check,
 } from "lucide-preact";
 import type { ScoutLogEntry, TradeOrderResult } from "../lib/types";
-import { useAnalysisMutation, useTradeMutation } from "../lib/hooks";
+import { useAnalysisMutation, useTradeMutation, WashTradeError } from "../lib/hooks";
 
 interface Props {
   entry: ScoutLogEntry | null;
@@ -60,6 +60,7 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
   const [notional, setNotional] = useState(100);
   const [pendingAction, setPendingAction] = useState<{ ticker: string; side: string } | null>(null);
   const [orderResults, setOrderResults] = useState<Record<string, TradeOrderResult>>({});
+  const [washTradeAlert, setWashTradeAlert] = useState<{ ticker: string } | null>(null);
   const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set());
 
   const { sequenceMutation } = useAnalysisMutation();
@@ -70,6 +71,7 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
     sequenceMutation.reset();
     setPendingAction(null);
     setOrderResults({});
+    setWashTradeAlert(null);
     setSelectedTickers(new Set(entry?.tickers_json.map((t) => t.ticker.toUpperCase()) ?? []));
   }, [entry?.id]);
 
@@ -108,6 +110,7 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
   };
 
   const handleTrade = (ticker: string, side: "buy" | "sell" | "close") => {
+    setWashTradeAlert(null);
     setPendingAction({ ticker, side });
     tradeMutation.mutate(
       { ticker, side, notional: side === "close" ? undefined : notional },
@@ -116,8 +119,11 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
           setOrderResults((prev) => ({ ...prev, [ticker]: data }));
           setPendingAction(null);
         },
-        onError: () => {
+        onError: (error) => {
           setPendingAction(null);
+          if (error instanceof WashTradeError) {
+            setWashTradeAlert({ ticker });
+          }
         },
       },
     );
@@ -345,6 +351,34 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
                           </div>
                         )}
                       </div>
+
+                      {/* wash-trade alert */}
+                      {washTradeAlert?.ticker === ticker && (
+                        <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2.5">
+                          <div class="flex items-start gap-2">
+                            <AlertCircle size={13} class="text-amber-400 shrink-0 mt-0.5" />
+                            <p class="text-[12px] text-amber-200 leading-relaxed">
+                              Alpaca blocked this as a potential wash trade — an open order on the
+                              opposite side already exists for <span class="font-semibold">{ticker}</span>.
+                            </p>
+                          </div>
+                          <div class="flex items-center gap-2 pl-5">
+                            <button
+                              onClick={() => { setWashTradeAlert(null); handleTrade(ticker, "close"); }}
+                              class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold bg-zinc-700/60 border border-zinc-500/50 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-400 transition-colors"
+                            >
+                              <Minus size={11} />
+                              Close position instead
+                            </button>
+                            <button
+                              onClick={() => setWashTradeAlert(null)}
+                              class="px-2.5 py-1.5 rounded text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -352,8 +386,8 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
             )}
           </div>
 
-          {/* trade error */}
-          {tradeMutation.isError && (
+          {/* trade error — suppressed when a wash-trade alert is shown inline */}
+          {tradeMutation.isError && !washTradeAlert && (
             <div class="text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2">
               Trade failed: {tradeMutation.error?.message}
             </div>

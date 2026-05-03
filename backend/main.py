@@ -1,11 +1,14 @@
+import asyncio
+import json
 import os
 from datetime import date
 from typing import List, Optional
 
 from celery import chain as celery_chain
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import redis.asyncio as aioredis
 
 from backend.alpaca_client import close_position as alpaca_close_position, submit_order
 from backend.db import get_latest_results, get_open_positions, get_scouting_log, get_trade_log_by_id
@@ -141,7 +144,16 @@ _TAGS = [
             "Use **buy** / **sell** for notional market orders, or **close** to fully exit an open position."
         ),
     },
+    {
+        "name": "realtime",
+        "description": (
+            "WebSocket endpoint for real-time task completion events. "
+            "Connect to `/ws` to receive `task_complete` events as Celery tasks finish."
+        ),
+    },
 ]
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 app = FastAPI(
     title="TradingAgents API",
@@ -333,6 +345,8 @@ async def trigger_scout(
     time_horizon: str = Query("medium", description="short | medium | long"),
     style: str = Query("any", description="any | growth | value | momentum | quality"),
 ):
+    _risk_conviction = {"conservative": 4, "moderate": 3, "aggressive": 2}
+    resolved_conviction = min_conviction if min_conviction is not None else _risk_conviction.get(risk_level, 3)
     task = scout_tickers.delay(
         paid=paid,
         max_picks=max_picks,
@@ -346,7 +360,7 @@ async def trigger_scout(
         "task_id": task.id,
         "paid": paid,
         "max_picks": max_picks,
-        "min_conviction": min_conviction,
+        "min_conviction": resolved_conviction,
         "status": "scouting",
     }
 
@@ -412,4 +426,51 @@ async def manual_trade(
                 alpaca_status=str(order.status) if order else "failed",
             )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        detail = str(exc)
+        # Alpaca wash-trade rejection (40310000) → 409 Conflict
+        if "40310000" in detail or "wash trade" in detail.lower():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Alpaca rejected the order: potential wash trade detected "
+                    f"(an opposite-side order for {ticker} is already open). "
+                    f"To exit a long position use side=close instead of side=sell. "
+                    f"Raw: {detail}"
+                ),
+            )
+        raise HTTPException(status_code=502, detail=detail)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — real-time task events
+# ---------------------------------------------------------------------------
+
+@app.get(
+    "/ws",
+    tags=["realtime"],
+    summary="Real-time task events (WebSocket)",
+    description=(
+        "WebSocket endpoint. Connect to receive `task_complete` events whenever a "
+        "Celery task finishes. An initial `{\"type\": \"connected\"}` message is sent "
+        "on handshake. Events follow the agreed payload shape:\n\n"
+        "```json\n"
+        "{\"type\": \"task_complete\", \"kind\": \"analysis\", \"ticker\": \"NVDA\", "
+        "\"tickers\": null, \"status\": \"executed\", \"task_id\": \"abc-123\"}\n"
+        "```"
+    ),
+)
+async def websocket_events(websocket: WebSocket):
+    await websocket.accept()
+    r: aioredis.Redis = aioredis.from_url(REDIS_URL)
+    pubsub = r.pubsub()
+    await pubsub.subscribe("task_events")
+    try:
+        await websocket.send_text(json.dumps({"type": "connected"}))
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                await websocket.send_text(message["data"])
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    finally:
+        await pubsub.unsubscribe("task_events")
+        await r.aclose()
