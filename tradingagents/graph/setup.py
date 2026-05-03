@@ -27,19 +27,32 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
 
     def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
+        self,
+        selected_analysts=["market", "social", "news", "fundamentals"],
+        parallel_analysts: bool = True,
     ):
         """Set up and compile the agent workflow graph.
 
         Args:
-            selected_analysts (list): List of analyst types to include. Options are:
-                - "market": Market analyst
-                - "social": Social media analyst
-                - "news": News analyst
-                - "fundamentals": Fundamentals analyst
+            selected_analysts: Analyst types to include.
+            parallel_analysts: When True (default) all analysts run concurrently,
+                cutting wall-clock time roughly by len(selected_analysts)×.
+                When False the original sequential order is preserved.
         """
         if len(selected_analysts) == 0:
             raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
+
+        # In parallel mode the per-analyst Msg Clear nodes become no-ops to avoid
+        # a double-delete crash: all 4 branches see the same initial message IDs and
+        # each would emit RemoveMessage for those IDs — LangGraph raises ValueError
+        # when the second branch tries to remove an already-removed ID.
+        # The single Analyst Sync fan-in node handles the one-shot cleanup instead.
+        use_parallel = parallel_analysts and len(selected_analysts) > 1
+
+        def _make_noop():
+            def noop(state):
+                return {}
+            return noop
 
         # Create analyst nodes
         analyst_nodes = {}
@@ -47,31 +60,23 @@ class GraphSetup:
         tool_nodes = {}
 
         if "market" in selected_analysts:
-            analyst_nodes["market"] = create_market_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["market"] = create_msg_delete()
+            analyst_nodes["market"] = create_market_analyst(self.quick_thinking_llm)
+            delete_nodes["market"] = _make_noop() if use_parallel else create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
 
         if "social" in selected_analysts:
-            analyst_nodes["social"] = create_social_media_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["social"] = create_msg_delete()
+            analyst_nodes["social"] = create_social_media_analyst(self.quick_thinking_llm)
+            delete_nodes["social"] = _make_noop() if use_parallel else create_msg_delete()
             tool_nodes["social"] = self.tool_nodes["social"]
 
         if "news" in selected_analysts:
-            analyst_nodes["news"] = create_news_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["news"] = create_msg_delete()
+            analyst_nodes["news"] = create_news_analyst(self.quick_thinking_llm)
+            delete_nodes["news"] = _make_noop() if use_parallel else create_msg_delete()
             tool_nodes["news"] = self.tool_nodes["news"]
 
         if "fundamentals" in selected_analysts:
-            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["fundamentals"] = create_msg_delete()
+            analyst_nodes["fundamentals"] = create_fundamentals_analyst(self.quick_thinking_llm)
+            delete_nodes["fundamentals"] = _make_noop() if use_parallel else create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
         # Create researcher and manager nodes
@@ -92,9 +97,7 @@ class GraphSetup:
         # Add analyst nodes to the graph
         for analyst_type, node in analyst_nodes.items():
             workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
-            workflow.add_node(
-                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
-            )
+            workflow.add_node(f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type])
             workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
 
         # Add other nodes
@@ -107,18 +110,11 @@ class GraphSetup:
         workflow.add_node("Conservative Analyst", conservative_analyst)
         workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
-        # Define edges
-        # Start with the first analyst
-        first_analyst = selected_analysts[0]
-        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
-
-        # Connect analysts in sequence
-        for i, analyst_type in enumerate(selected_analysts):
+        # Per-analyst tool-loop edges (identical regardless of parallel/sequential)
+        for analyst_type in selected_analysts:
             current_analyst = f"{analyst_type.capitalize()} Analyst"
             current_tools = f"tools_{analyst_type}"
             current_clear = f"Msg Clear {analyst_type.capitalize()}"
-
-            # Add conditional edges for current analyst
             workflow.add_conditional_edges(
                 current_analyst,
                 getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
@@ -126,12 +122,27 @@ class GraphSetup:
             )
             workflow.add_edge(current_tools, current_analyst)
 
-            # Connect to next analyst or to Bull Researcher if this is the last analyst
-            if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
-                workflow.add_edge(current_clear, next_analyst)
-            else:
-                workflow.add_edge(current_clear, "Bull Researcher")
+        # Analyst fan-out / fan-in wiring
+        if use_parallel:
+            # All analysts start simultaneously from START (fan-out).
+            for analyst_type in selected_analysts:
+                workflow.add_edge(START, f"{analyst_type.capitalize()} Analyst")
+
+            # Single sync node waits for every Clear branch (fan-in), then clears
+            # the combined message history before handing off to the research phase.
+            workflow.add_node("Analyst Sync", create_msg_delete())
+            for analyst_type in selected_analysts:
+                workflow.add_edge(f"Msg Clear {analyst_type.capitalize()}", "Analyst Sync")
+            workflow.add_edge("Analyst Sync", "Bull Researcher")
+        else:
+            # Original sequential flow
+            workflow.add_edge(START, f"{selected_analysts[0].capitalize()} Analyst")
+            for i, analyst_type in enumerate(selected_analysts):
+                current_clear = f"Msg Clear {analyst_type.capitalize()}"
+                if i < len(selected_analysts) - 1:
+                    workflow.add_edge(current_clear, f"{selected_analysts[i+1].capitalize()} Analyst")
+                else:
+                    workflow.add_edge(current_clear, "Bull Researcher")
 
         # Add remaining edges
         workflow.add_conditional_edges(

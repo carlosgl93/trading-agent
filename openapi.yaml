@@ -1,0 +1,754 @@
+openapi: 3.0.3
+info:
+  title: TradingAgents API
+  version: 1.0.0
+  description: |
+    Automated multi-agent trading platform built on the **TradingAgents** framework.
+
+    ### Architecture
+    - **LLM provider**: OpenRouter (free-tier model ladder + optional paid model)
+    - **Agent graph**: 4 analysts → researchers → trader → risk team → portfolio manager
+    - **Parallelism**: analysts run concurrently to cut wall-clock time ~4×
+    - **Broker**: Celery + Redis
+    - **Storage**: Supabase (PostgreSQL)
+    - **Trading**: Alpaca Paper Trading API
+
+    ### Model ladder (free tier)
+    ```
+    google/gemma-4-31b-it:free → google/gemma-4-26b-a4b-it:free
+    → minimax/minimax-m2.5:free → nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+    → openrouter/owl-alpha
+    ```
+    With `paid=true`: **deepseek/deepseek-v4-flash** leads, **deepseek/deepseek-v3.2** is the paid fallback, then free models.
+
+    ### Retry strategy
+    429 / 404 / 502 / 503 / 524 → switch model (15 s gap).
+    After full cycle → exponential backoff (60 → 120 → 240 s).
+  contact:
+    name: Carlos Gumucio
+    email: cgumucio93@gmail.com
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: health
+    description: Service liveness check.
+  - name: analysis
+    description: |
+      Trigger multi-agent stock analysis via OpenRouter LLMs.
+      Tasks run on Celery workers; results are stored in Supabase.
+      Use `paid=true` to use **deepseek/deepseek-chat** as the primary model.
+  - name: results
+    description: Read analysis logs from the `trading_logs` Supabase table.
+  - name: portfolio
+    description: |
+      Portfolio position management. Positions are opened automatically when a trade
+      executes. Reviews run on Beat schedule (12:00 PM ET and 3:30 PM ET, Mon–Fri)
+      and exit positions when the signal flips.
+  - name: scout
+    description: |
+      Autonomous macro-to-micro ticker discovery. Fetches sector ETF performance and
+      macro news, asks the LLM to reason macro → sector → specific stocks, then chains
+      the top picks into `analyze_and_trade`. Runs automatically at **9:00 AM ET** Mon–Fri.
+  - name: trading
+    description: |
+      Direct manual Alpaca paper-trading actions.
+      Use **buy** / **sell** for notional market orders, or **close** to fully exit an open position.
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: health_check
+      summary: Health check
+      description: Returns `{"status":"ok"}` when the API is running.
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+
+  /results:
+    get:
+      tags: [results]
+      operationId: get_results
+      summary: Latest analysis results
+      description: Returns the most recent rows from `trading_logs`, newest first.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Number of rows to return (1–200)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: List of trade log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TradeLog"
+              example:
+                - id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                  ticker: "LLY"
+                  analysis_date: "2026-05-01"
+                  rating: "Buy"
+                  model_used: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+                  alpaca_order_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  execution_status: "executed"
+                  created_at: "2026-05-01T17:17:11.383771+00:00"
+
+  /results/{log_id}:
+    get:
+      tags: [results]
+      operationId: get_result_detail
+      summary: Full analysis detail
+      description: Returns a single `trading_logs` row including `reasoning` (Portfolio Manager decision) and `raw_report`.
+      parameters:
+        - name: log_id
+          in: path
+          required: true
+          description: UUID of the trading log entry
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full trade log entry with reasoning
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeLogDetail"
+        "404":
+          description: Log entry not found
+
+  /test-task/{ticker}:
+    post:
+      tags: [analysis]
+      operationId: trigger_single_analysis
+      summary: Trigger single-ticker analysis
+      description: |
+        Enqueues one `analyze_and_trade` Celery task for the given ticker.
+        Use for smoke-testing a single symbol before running a full sequence.
+
+        ```bash
+        curl -X POST http://localhost:8000/test-task/AAPL
+        curl -X POST "http://localhost:8000/test-task/AAPL?paid=true"
+        ```
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          description: Stock ticker symbol (case-insensitive)
+          schema:
+            type: string
+            example: AAPL
+        - name: analysis_date
+          in: query
+          required: false
+          description: ISO date string (defaults to today)
+          schema:
+            type: string
+            format: date
+            example: "2026-05-01"
+        - name: paid
+          in: query
+          required: false
+          description: Use deepseek/deepseek-chat as primary model
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Task successfully queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskQueued"
+              example:
+                task_id: "d388e720-e77a-418e-b848-a7e40add3d28"
+                ticker: "AAPL"
+                analysis_date: "2026-05-01"
+                paid: false
+                status: "queued"
+
+  /run-sequence:
+    post:
+      tags: [analysis]
+      operationId: run_ticker_sequence
+      summary: Run a ticker list sequentially
+      description: |
+        Builds a Celery chain so each ticker's analysis starts **only after** the
+        previous one completes. Prevents concurrent free-tier rate-limit collisions.
+
+        ```bash
+        # Free tier
+        curl -X POST http://localhost:8000/run-sequence \
+             -H "Content-Type: application/json" \
+             -d '["VST", "LLY", "NVDA"]'
+
+        # Paid (deepseek-v4-flash first)
+        curl -X POST "http://localhost:8000/run-sequence?paid=true" \
+             -H "Content-Type: application/json" \
+             -d '["VST", "LLY", "NVDA"]'
+        ```
+      parameters:
+        - name: analysis_date
+          in: query
+          required: false
+          description: ISO date string (defaults to today)
+          schema:
+            type: string
+            format: date
+        - name: paid
+          in: query
+          required: false
+          description: Use deepseek/deepseek-chat as primary model
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: true
+        description: JSON array of ticker symbols
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+              minItems: 1
+            example: ["VST", "LLY", "NVDA"]
+      responses:
+        "200":
+          description: Sequence successfully chained
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SequenceQueued"
+              example:
+                chain_id: "c7d8e9f0-1234-5678-abcd-ef0123456789"
+                tickers: ["VST", "LLY", "NVDA"]
+                analysis_date: "2026-05-01"
+                paid: false
+                status: "chained — running sequentially"
+
+  /positions:
+    get:
+      tags: [portfolio]
+      operationId: list_open_positions
+      summary: List open positions
+      description: Returns all portfolio positions with `status = open`.
+      responses:
+        "200":
+          description: List of open positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PortfolioPosition"
+              example:
+                - id: "9fa85f64-5717-4562-b3fc-2c963f66afa6"
+                  ticker: "LLY"
+                  direction: "long"
+                  entry_rating: "Buy"
+                  entry_date: "2026-05-01"
+                  entry_order_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  exit_order_id: null
+                  exit_date: null
+                  exit_rating: null
+                  status: "open"
+                  last_reviewed_at: "2026-05-01T17:00:00+00:00"
+                  created_at: "2026-05-01T17:17:11+00:00"
+
+  /scout:
+    post:
+      tags: [scout]
+      operationId: trigger_scout
+      summary: Trigger autonomous scout
+      description: |
+        Runs the macro-to-micro scout: fetches sector ETF performance and macro news,
+        asks the LLM to reason macro → sector → tickers, then queues the top picks
+        for full analysis. Also runs automatically at **9:00 AM ET** Mon–Fri.
+
+        ```bash
+        curl -X POST http://localhost:8000/scout
+        curl -X POST 'http://localhost:8000/scout?paid=true&max_picks=3'
+        ```
+      parameters:
+        - name: paid
+          in: query
+          required: false
+          description: Use deepseek/deepseek-v4-flash as primary model
+          schema:
+            type: boolean
+            default: true
+        - name: max_picks
+          in: query
+          required: false
+          description: Maximum number of tickers to queue (1–10)
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 10
+        - name: min_conviction
+          in: query
+          required: false
+          description: Override minimum conviction (derived from risk_level if omitted)
+          schema:
+            type: integer
+            nullable: true
+            minimum: 1
+            maximum: 5
+        - name: risk_level
+          in: query
+          required: false
+          description: "conservative (conviction≥4) | moderate (≥3) | aggressive (≥2)"
+          schema:
+            type: string
+            enum: [conservative, moderate, aggressive]
+            default: moderate
+        - name: focus_sectors
+          in: query
+          required: false
+          description: Limit picks to specific SPDR sectors (repeatable; empty = all)
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - Technology
+                - Financials
+                - Healthcare
+                - Energy
+                - Industrials
+                - Consumer Discretionary
+                - Communication Services
+                - Utilities
+                - Materials
+                - Real Estate
+                - Consumer Staples
+        - name: time_horizon
+          in: query
+          required: false
+          description: "short (1–4 weeks) | medium (1–3 months) | long (6–12 months)"
+          schema:
+            type: string
+            enum: [short, medium, long]
+            default: medium
+        - name: style
+          in: query
+          required: false
+          description: "any | growth | value | momentum | quality"
+          schema:
+            type: string
+            enum: [any, growth, value, momentum, quality]
+            default: any
+      responses:
+        "200":
+          description: Scout task queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoutDispatched"
+              example:
+                task_id: "f1a2b3c4-1234-5678-abcd-ef0123456789"
+                paid: true
+                max_picks: 5
+                min_conviction: 3
+                status: "scouting"
+
+  /scout-history:
+    get:
+      tags: [scout]
+      operationId: get_scout_history
+      summary: Recent scout results
+      description: Returns the most recent rows from `scouting_log`, newest first.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Number of rows to return (1–100)
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of scout log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScoutLogEntry"
+              example:
+                - id: "a1b2c3d4-5678-90ab-cdef-012345678901"
+                  scout_date: "2026-05-01"
+                  macro_context: "Risk-on environment driven by falling rates and strong earnings."
+                  tickers_json:
+                    - ticker: "NVDA"
+                      sector: "Technology"
+                      thesis: "AI infrastructure spending accelerating."
+                      conviction: 5
+                    - ticker: "LLY"
+                      sector: "Healthcare"
+                      thesis: "GLP-1 drug pipeline catalyst ahead."
+                      conviction: 4
+                  model_used: "deepseek/deepseek-v4-flash"
+                  created_at: "2026-05-01T14:00:05.123456+00:00"
+
+  /trade/{ticker}:
+    post:
+      tags: [trading]
+      operationId: manual_trade
+      summary: Manual Alpaca order
+      description: |
+        Submit a direct market order to Alpaca paper trading.
+
+        - `side=buy` — notional fractional market buy
+        - `side=sell` — notional market sell / open short
+        - `side=close` — fully exit the existing position
+
+        ```bash
+        curl -X POST 'http://localhost:8000/trade/NVDA?side=buy&notional=200'
+        curl -X POST 'http://localhost:8000/trade/NVDA?side=close'
+        ```
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+            example: NVDA
+        - name: side
+          in: query
+          required: true
+          description: "buy | sell | close"
+          schema:
+            type: string
+            enum: [buy, sell, close]
+        - name: notional
+          in: query
+          required: false
+          description: USD notional amount (ignored for close)
+          schema:
+            type: number
+            default: 100
+            minimum: 1
+      responses:
+        "200":
+          description: Order submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeOrder"
+              example:
+                order_id: "d1e2f3a4-5678-90ab-cdef-012345678901"
+                ticker: "NVDA"
+                side: "buy"
+                notional: 100
+                alpaca_status: "accepted"
+        "400":
+          description: Invalid side parameter
+        "502":
+          description: Alpaca API error
+
+  /review-positions:
+    post:
+      tags: [portfolio]
+      operationId: trigger_position_review
+      summary: Trigger position review
+      description: |
+        Manually dispatches a lightweight review (market + fundamentals analysts only,
+        ~8 min) for every open position. Exits a position if the new rating flips the signal.
+
+        This also runs automatically on Beat schedule: **12:00 PM ET** and **3:30 PM ET**, Mon–Fri.
+
+        ```bash
+        curl -X POST http://localhost:8000/review-positions
+        curl -X POST "http://localhost:8000/review-positions?paid=true"
+        ```
+      parameters:
+        - name: paid
+          in: query
+          required: false
+          description: Use deepseek/deepseek-chat for reviews
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Review chain dispatched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDispatched"
+              example:
+                task_id: "e1f2g3h4-5678-90ab-cdef-012345678901"
+                open_positions: 2
+                tickers: ["LLY", "VST"]
+                status: "dispatched"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    TradeOrder:
+      type: object
+      required: [ticker, side, alpaca_status]
+      properties:
+        order_id:
+          type: string
+          nullable: true
+          format: uuid
+        ticker:
+          type: string
+          example: NVDA
+        side:
+          type: string
+          enum: [buy, sell, close]
+        notional:
+          type: number
+          nullable: true
+          example: 100
+        alpaca_status:
+          type: string
+          example: accepted
+          description: "Alpaca order status, or 'no_position' when closing a ticker with no open position"
+
+    TradeLogDetail:
+      allOf:
+        - $ref: "#/components/schemas/TradeLog"
+        - type: object
+          properties:
+            reasoning:
+              type: string
+              nullable: true
+              description: Portfolio Manager's raw decision text
+            raw_report:
+              type: object
+              nullable: true
+              description: Structured report data (JSONB)
+
+    TradeLog:
+      type: object
+      required: [id, ticker, analysis_date, model_used, execution_status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticker:
+          type: string
+          example: LLY
+        analysis_date:
+          type: string
+          format: date
+          example: "2026-05-01"
+        rating:
+          type: string
+          nullable: true
+          enum: [Buy, Overweight, Hold, Underweight, Sell, null]
+          example: Buy
+        model_used:
+          type: string
+          example: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+        alpaca_order_id:
+          type: string
+          nullable: true
+          format: uuid
+        execution_status:
+          type: string
+          enum: [executed, skipped, failed, pending]
+          example: executed
+        created_at:
+          type: string
+          format: date-time
+
+    PortfolioPosition:
+      type: object
+      required: [id, ticker, direction, entry_rating, entry_date, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticker:
+          type: string
+          example: LLY
+        direction:
+          type: string
+          enum: [long, short]
+          example: long
+        entry_rating:
+          type: string
+          enum: [Buy, Overweight, Sell, Underweight]
+          example: Buy
+        entry_date:
+          type: string
+          format: date
+        entry_order_id:
+          type: string
+          nullable: true
+          format: uuid
+        exit_order_id:
+          type: string
+          nullable: true
+          format: uuid
+        exit_date:
+          type: string
+          nullable: true
+          format: date
+        exit_rating:
+          type: string
+          nullable: true
+          enum: [Buy, Overweight, Hold, Underweight, Sell, null]
+        status:
+          type: string
+          enum: [open, closed]
+          example: open
+        last_reviewed_at:
+          type: string
+          nullable: true
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    TaskQueued:
+      type: object
+      required: [task_id, ticker, analysis_date, paid, status]
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        ticker:
+          type: string
+          example: AAPL
+        analysis_date:
+          type: string
+          format: date
+        paid:
+          type: boolean
+        status:
+          type: string
+          example: queued
+
+    SequenceQueued:
+      type: object
+      required: [chain_id, tickers, analysis_date, paid, status]
+      properties:
+        chain_id:
+          type: string
+          format: uuid
+        tickers:
+          type: array
+          items:
+            type: string
+        analysis_date:
+          type: string
+          format: date
+        paid:
+          type: boolean
+        status:
+          type: string
+          example: "chained — running sequentially"
+
+    ReviewDispatched:
+      type: object
+      required: [task_id, open_positions, tickers, status]
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        open_positions:
+          type: integer
+          example: 2
+        tickers:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          example: dispatched
+
+    ScoutDispatched:
+      type: object
+      required: [task_id, paid, max_picks, min_conviction, status]
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        paid:
+          type: boolean
+        max_picks:
+          type: integer
+          example: 5
+        min_conviction:
+          type: integer
+          example: 3
+        status:
+          type: string
+          example: scouting
+
+    ScoutedTicker:
+      type: object
+      required: [ticker, sector, thesis, conviction]
+      properties:
+        ticker:
+          type: string
+          example: NVDA
+        sector:
+          type: string
+          example: Technology
+        thesis:
+          type: string
+          example: "AI infrastructure capex accelerating into year-end."
+        conviction:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 4
+
+    ScoutLogEntry:
+      type: object
+      required: [id, scout_date, tickers_json, model_used, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        scout_date:
+          type: string
+          format: date
+        macro_context:
+          type: string
+          nullable: true
+          example: "Risk-on environment driven by falling rates."
+        tickers_json:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoutedTicker"
+        model_used:
+          type: string
+          example: "deepseek/deepseek-v4-flash"
+        created_at:
+          type: string
+          format: date-time

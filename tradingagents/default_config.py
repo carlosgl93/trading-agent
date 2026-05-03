@@ -31,6 +31,9 @@ DEFAULT_CONFIG = {
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
+    # Run all analysts concurrently (fan-out/fan-in) instead of sequentially.
+    # Cuts wall-clock time proportionally to the number of analysts selected.
+    "parallel_analysts": True,
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,

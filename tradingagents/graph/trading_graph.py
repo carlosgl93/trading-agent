@@ -125,7 +125,10 @@ class TradingAgentsGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        self.workflow = self.graph_setup.setup_graph(
+            selected_analysts,
+            parallel_analysts=self.config.get("parallel_analysts", True),
+        )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
@@ -148,6 +151,16 @@ class TradingAgentsGraph:
             effort = self.config.get("anthropic_effort")
             if effort:
                 kwargs["effort"] = effort
+
+        elif provider == "openrouter":
+            # OpenRouter requires HTTP-Referer and X-Title headers; read from
+            # config["default_headers"] if provided, otherwise use env vars.
+            headers = self.config.get("default_headers")
+            if not headers:
+                referer = os.environ.get("SITE_URL", "http://localhost:4321")
+                title = os.environ.get("OPENROUTER_SITE_NAME", "TradingAgents")
+                headers = {"HTTP-Referer": referer, "X-Title": title}
+            kwargs["default_headers"] = headers
 
         return kwargs
 

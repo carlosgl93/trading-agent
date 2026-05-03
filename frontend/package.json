@@ -1,0 +1,22 @@
+{
+  "name": "trading-agents-frontend",
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/preact": "^4.0.0",
+    "@tanstack/preact-query": "^5.100.7",
+    "astro": "^5.0.0",
+    "lucide-preact": "^1.14.0",
+    "preact": "^10.25.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/node": "^22.0.0",
+    "tailwindcss": "^4.2.4"
+  }
+}
