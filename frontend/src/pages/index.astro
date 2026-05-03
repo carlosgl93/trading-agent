@@ -1,0 +1,56 @@
+---
+import "../styles/global.css";
+import SystemStatus from "../components/SystemStatus";
+import AnalysisEngine from "../components/AnalysisEngine";
+import ScoutPanel from "../components/ScoutPanel";
+import ScoutHistory from "../components/ScoutHistory";
+import PortfolioMonitor from "../components/PortfolioMonitor";
+import ExecutionLogs from "../components/ExecutionLogs";
+import { TrendingUp, Activity } from "lucide-preact";
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TradingAgents — Live Dashboard</title>
+  </head>
+  <body class="min-h-screen">
+    <header class="bg-surface-900 border-b border-surface-600 px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-accent-cyan/15 flex items-center justify-center">
+          <TrendingUp size={18} class="text-accent-cyan" />
+        </div>
+        <div>
+          <h1 class="text-sm font-bold text-zinc-100">TradingAgents</h1>
+          <p class="text-[11px] text-zinc-500">Multi-agent trading · OpenRouter · Alpaca Paper</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-xs text-zinc-500">
+        <Activity size={12} />
+        <span>v0.1.0</span>
+      </div>
+    </header>
+
+    <main class="p-4 max-w-7xl mx-auto space-y-4">
+      <SystemStatus client:load />
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-1 space-y-4">
+          <AnalysisEngine client:load />
+          <ScoutPanel client:load />
+        </div>
+
+        <div class="lg:col-span-1">
+          <PortfolioMonitor client:load />
+        </div>
+
+        <div class="lg:col-span-1">
+          <ExecutionLogs client:load />
+        </div>
+      </div>
+
+      <ScoutHistory client:load />
+    </main>
+  </body>
+</html>

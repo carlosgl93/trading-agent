@@ -38,6 +38,8 @@ class NormalizedChatOpenAI(ChatOpenAI):
 _PASSTHROUGH_KWARGS = (
     "timeout", "max_retries", "reasoning_effort",
     "api_key", "callbacks", "http_client", "http_async_client",
+    # OpenRouter (and other proxies) require custom HTTP headers
+    "default_headers",
 )
 
 # Provider base URLs and API key env vars

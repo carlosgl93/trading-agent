@@ -1,0 +1,99 @@
+import { useState } from "preact/hooks";
+import { QueryClientProvider } from "@tanstack/preact-query";
+import { Zap, Crown, Cpu } from "lucide-preact";
+import { queryClient } from "../lib/hooks/queryClient";
+import { useAnalysisMutation } from "../lib/hooks";
+import TickerInput from "./TickerInput";
+
+function AnalysisEngineInner() {
+  const [isPaid, setIsPaid] = useState(false);
+  const { singleMutation, sequenceMutation } = useAnalysisMutation();
+
+  const isLoading = singleMutation.isPending || sequenceMutation.isPending;
+  const isError = singleMutation.isError || sequenceMutation.isError;
+  const errorMsg = singleMutation.error?.message ?? sequenceMutation.error?.message;
+
+  const handleAnalyze = (ticker: string) => {
+    singleMutation.mutate({ ticker, paid: isPaid });
+  };
+
+  const handleRunSequence = (tickers: string[]) => {
+    sequenceMutation.mutate({ tickers, paid: isPaid });
+  };
+
+  return (
+    <div class="rounded-xl border border-surface-500 bg-surface-800 p-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <Zap size={16} class="text-accent-cyan" />
+          <h2 class="text-sm font-semibold text-zinc-100">Command Center</h2>
+        </div>
+        <div class="flex items-center gap-1.5">
+          {isPaid && (
+            <span class="text-[10px] font-bold text-gold-400 glow-gold-text tracking-wider flex items-center gap-1">
+              <Crown size={12} />
+              PAID TIER
+            </span>
+          )}
+          <button
+            onClick={() => setIsPaid(!isPaid)}
+            class={`relative w-9 h-5 rounded-full transition-colors ${
+              isPaid ? "bg-gold-500" : "bg-surface-500"
+            }`}
+          >
+            <span
+              class={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                isPaid ? "translate-x-4" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {isPaid && (
+        <div class="rounded-lg border border-gold-500/20 bg-gold-500/5 px-3 py-2">
+          <div class="flex items-center gap-2 text-xs">
+            <Cpu size={12} class="text-gold-400" />
+            <span class="text-gold-300 font-medium">Lead Model</span>
+            <span class="text-gold-400 font-bold glow-gold-text">deepseek-v4-flash</span>
+          </div>
+          <p class="text-[10px] text-zinc-400 mt-1">
+            Premium routing with full model ladder fallback chain
+          </p>
+        </div>
+      )}
+
+      <TickerInput
+        onAnalyze={handleAnalyze}
+        onRunSequence={handleRunSequence}
+        disabled={isLoading}
+      />
+
+      {isError && (
+        <div class="text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2">
+          {errorMsg}
+        </div>
+      )}
+
+      {singleMutation.data && (
+        <div class="text-xs text-accent-green bg-accent-green/10 border border-accent-green/20 rounded-lg px-3 py-2">
+          Task queued: {singleMutation.data.ticker} ({singleMutation.data.status})
+        </div>
+      )}
+
+      {sequenceMutation.data && (
+        <div class="text-xs text-accent-cyan bg-accent-cyan/10 border border-accent-cyan/20 rounded-lg px-3 py-2">
+          Sequence queued: {sequenceMutation.data.tickers.join(", ")} ({sequenceMutation.data.status})
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AnalysisEngine() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AnalysisEngineInner />
+    </QueryClientProvider>
+  );
+}

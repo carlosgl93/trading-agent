@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system deps needed by some Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml .
+COPY tradingagents/ ./tradingagents/
+COPY backend/ ./backend/
+
+# Install core package + backend extras
+RUN pip install --no-cache-dir -e ".[backend]"
+
+# Default: run FastAPI. Override with `command` in docker-compose for workers.
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

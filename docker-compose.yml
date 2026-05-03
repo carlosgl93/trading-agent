@@ -1,35 +1,51 @@
 services:
-  tradingagents:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - tradingagents_data:/home/appuser/.tradingagents
-    tty: true
-    stdin_open: true
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama_data:/root/.ollama
-    profiles:
-      - ollama
-
-  tradingagents-ollama:
-    build: .
-    env_file:
-      - .env
-    environment:
-      - LLM_PROVIDER=ollama
-    volumes:
-      - tradingagents_data:/home/appuser/.tradingagents
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file: .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
-      - ollama
-    tty: true
-    stdin_open: true
-    profiles:
-      - ollama
+      redis:
+        condition: service_healthy
+    volumes:
+      - tradingagents_data:/root/.tradingagents
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file: .env
+    command: celery -A backend.celery_app worker --loglevel=info --concurrency=2 -Q analysis,default
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - tradingagents_data:/root/.tradingagents
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file: .env
+    command: celery -A backend.celery_app beat --loglevel=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   tradingagents_data:
-  ollama_data:
