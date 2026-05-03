@@ -1,32 +1,64 @@
 @import "tailwindcss";
 
 @theme {
-  --color-surface-900: #0a0a0f;
-  --color-surface-800: #12121a;
-  --color-surface-700: #1a1a26;
-  --color-surface-600: #24243a;
-  --color-surface-500: #2e2e48;
-  --color-surface-400: #3b3b5c;
-  --color-accent-cyan: #22d3ee;
-  --color-accent-green: #4ade80;
-  --color-accent-amber: #fbbf24;
-  --color-accent-red: #f87171;
-  --color-accent-purple: #a78bfa;
-  --color-gold-400: #facc15;
-  --color-gold-500: #eab308;
-  --color-gold-600: #ca8a04;
+  /* Surfaces — warm amber-black (replaces cold blue) */
+  --color-surface-900: #0b0a00;
+  --color-surface-800: #141209;
+  --color-surface-700: #1c1a0f;
+  --color-surface-600: #2a2618;
+  --color-surface-500: #3a3420;
+  --color-surface-400: #4a4430;
+
+  /* Accents */
+  --color-accent-amber: #d4a820;
+  --color-accent-orange: #e8673a;
+  --color-accent-green: #6bcb77;
+  --color-accent-red: #d95050;
+  --color-accent-cyan: #22d3ee;   /* Technical agent identity */
+  --color-accent-purple: #a78bfa; /* kept for backward compat */
+
+  /* Gold — retained for paid tier */
+  --color-gold-400: #d4a820;
+  --color-gold-500: #c49a1a;
+  --color-gold-600: #a88015;
+
+  /* Text */
+  --color-text-base: #e8e0c8;
+  --color-text-muted: #6b6047;
 }
 
+@utility glow-amber {
+  box-shadow: 0 0 12px rgba(212, 168, 32, 0.35), 0 0 32px rgba(212, 168, 32, 0.12);
+}
+
+@utility glow-amber-text {
+  text-shadow: 0 0 8px rgba(212, 168, 32, 0.5);
+}
+
+@utility glow-orange {
+  box-shadow: 0 0 12px rgba(232, 103, 58, 0.4), 0 0 32px rgba(232, 103, 58, 0.15);
+}
+
+/* kept for existing references */
 @utility glow-gold {
-  box-shadow: 0 0 15px rgba(250, 204, 21, 0.4), 0 0 40px rgba(250, 204, 21, 0.15);
+  box-shadow: 0 0 15px rgba(212, 168, 32, 0.4), 0 0 40px rgba(212, 168, 32, 0.15);
 }
 
 @utility glow-gold-text {
-  text-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+  text-shadow: 0 0 10px rgba(212, 168, 32, 0.5);
 }
 
 @utility glow-diamond {
   box-shadow: 0 0 15px rgba(167, 139, 250, 0.4), 0 0 40px rgba(167, 139, 250, 0.15);
+}
+
+@utility agent-thinking {
+  animation: agent-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes agent-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
 }
 
 @layer base {
@@ -36,8 +68,8 @@
   body {
     margin: 0;
     background: var(--color-surface-900);
-    color: #e2e8f0;
-    font-family: system-ui, -apple-system, sans-serif;
+    color: var(--color-text-base);
+    font-family: "DM Sans", system-ui, sans-serif;
   }
   ::-webkit-scrollbar {
     width: 6px;

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/preact-query";
-import { LayoutDashboard, RefreshCw } from "lucide-preact";
+import { Briefcase, RefreshCw } from "lucide-preact";
 import { queryClient } from "../lib/hooks/queryClient";
 import { usePositions } from "../lib/hooks";
 import PositionCard from "./PositionCard";
@@ -14,8 +14,13 @@ function PortfolioMonitorInner() {
     <div class="rounded-xl border border-surface-500 bg-surface-800 p-4 space-y-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <LayoutDashboard size={16} class="text-accent-purple" />
-          <h2 class="text-sm font-semibold text-zinc-100">Portfolio Monitor</h2>
+          <Briefcase size={16} class="text-accent-amber" />
+          <h2
+            class="text-sm font-semibold"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+          >
+            Portfolio Monitor
+          </h2>
         </div>
         <button
           onClick={() => refetch()}
@@ -28,7 +33,7 @@ function PortfolioMonitorInner() {
 
       {isLoading && (
         <div class="flex items-center justify-center py-8">
-          <div class="w-5 h-5 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+          <div class="w-5 h-5 border-2 border-accent-amber border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
@@ -39,7 +44,7 @@ function PortfolioMonitorInner() {
       )}
 
       {!isLoading && !isError && positions && positions.length === 0 && (
-        <div class="text-xs text-zinc-500 text-center py-6">
+        <div class="text-xs text-center py-6" style={{ color: "#6b6047" }}>
           No open positions yet
         </div>
       )}
@@ -48,8 +53,11 @@ function PortfolioMonitorInner() {
         <div class="space-y-3">
           {openPositions.length > 0 && (
             <div>
-              <div class="text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
-                Open ({openPositions.length})
+              <div
+                class="text-[10px] tracking-wider mb-1.5"
+                style={{ color: "#6b6047", fontFamily: "'IBM Plex Mono', monospace" }}
+              >
+                OPEN ({openPositions.length})
               </div>
               <div class="grid grid-cols-1 gap-2">
                 {openPositions.map((p) => (
@@ -61,8 +69,11 @@ function PortfolioMonitorInner() {
 
           {closedPositions.length > 0 && (
             <div>
-              <div class="text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
-                Closed ({closedPositions.length})
+              <div
+                class="text-[10px] tracking-wider mb-1.5"
+                style={{ color: "#6b6047", fontFamily: "'IBM Plex Mono', monospace" }}
+              >
+                CLOSED ({closedPositions.length})
               </div>
               <div class="grid grid-cols-1 gap-2">
                 {closedPositions.slice(0, 3).map((p) => (

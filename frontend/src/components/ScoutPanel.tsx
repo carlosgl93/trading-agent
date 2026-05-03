@@ -10,7 +10,6 @@ import {
   type ScoutStyle,
 } from "../lib/types";
 
-// ── Reusable pill group ────────────────────────────────────────────────────
 function PillGroup<T extends string>({
   options,
   value,
@@ -24,7 +23,7 @@ function PillGroup<T extends string>({
     <div class="flex items-center flex-wrap gap-1">
       {options.map((opt) => {
         const active = value === opt.value;
-        const color = opt.color ?? "#22d3ee";
+        const color = opt.color ?? "#d4a820";
         return (
           <button
             key={opt.value}
@@ -33,7 +32,7 @@ function PillGroup<T extends string>({
             style={
               active
                 ? { background: `${color}22`, color, border: `1px solid ${color}55` }
-                : { background: "transparent", color: "#64748b", border: "1px solid #334155" }
+                : { background: "transparent", color: "#6b6047", border: "1px solid #2a2618" }
             }
           >
             {opt.label}
@@ -44,7 +43,6 @@ function PillGroup<T extends string>({
   );
 }
 
-// ── Sector chip multi-select ───────────────────────────────────────────────
 function SectorSelect({
   selected,
   onChange,
@@ -61,12 +59,13 @@ function SectorSelect({
 
   return (
     <div class="space-y-1.5">
-      <div class="flex items-center justify-between text-[10px] text-zinc-500">
-        <span>Sectors <span class="text-zinc-600">(empty = all)</span></span>
+      <div class="flex items-center justify-between text-[10px]" style={{ color: "#6b6047" }}>
+        <span>Sectors <span style={{ color: "#3a3420" }}>(empty = all)</span></span>
         {selected.size > 0 && (
           <button
             onClick={() => onChange(new Set())}
-            class="text-zinc-600 hover:text-zinc-400 transition-colors"
+            class="hover:text-zinc-400 transition-colors"
+            style={{ color: "#3a3420" }}
           >
             clear
           </button>
@@ -82,8 +81,8 @@ function SectorSelect({
               class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
               style={
                 active
-                  ? { background: "#a855f722", color: "#a855f7", border: "1px solid #a855f755" }
-                  : { background: "transparent", color: "#64748b", border: "1px solid #1e293b" }
+                  ? { background: "#d4a82022", color: "#d4a820", border: "1px solid #d4a82055" }
+                  : { background: "transparent", color: "#6b6047", border: "1px solid #1c1a0f" }
               }
             >
               {s}
@@ -95,7 +94,6 @@ function SectorSelect({
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────
 function ScoutPanelInner() {
   const [isPaid, setIsPaid] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -132,19 +130,24 @@ function ScoutPanelInner() {
       {/* header */}
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <Bot size={16} class="text-accent-purple" />
-          <h2 class="text-sm font-semibold text-zinc-100">Autonomous Scout</h2>
+          <Bot size={16} class="text-accent-amber" />
+          <h2
+            class="text-sm font-semibold"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+          >
+            Autonomous Scout
+          </h2>
         </div>
         <div class="flex items-center gap-1.5">
           {isPaid && (
-            <span class="text-[10px] font-bold text-gold-400 glow-gold-text tracking-wider flex items-center gap-1">
+            <span class="text-[10px] font-bold text-accent-amber glow-amber-text tracking-wider flex items-center gap-1">
               <Crown size={12} />
               PAID
             </span>
           )}
           <button
             onClick={() => setIsPaid(!isPaid)}
-            class={`relative w-9 h-5 rounded-full transition-colors ${isPaid ? "bg-gold-500" : "bg-surface-500"}`}
+            class={`relative w-9 h-5 rounded-full transition-colors ${isPaid ? "bg-accent-amber" : "bg-surface-500"}`}
           >
             <span
               class={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
@@ -155,17 +158,17 @@ function ScoutPanelInner() {
         </div>
       </div>
 
-      <p class="text-[11px] text-zinc-500">
+      <p class="text-[11px]" style={{ color: "#6b6047" }}>
         Macro → sector → ticker reasoning. Auto-runs at{" "}
-        <span class="text-zinc-400">9:00 AM ET</span> weekdays.
+        <span style={{ color: "#4a4430" }}>9:00 AM ET</span> weekdays.
       </p>
 
       {/* last run summary */}
       {lastRun && (
         <div class="rounded-lg bg-surface-700/50 border border-surface-600 p-2.5 space-y-1.5">
           <div class="flex items-center justify-between text-[10px]">
-            <span class="text-zinc-500">
-              Last run: <span class="text-zinc-400">{lastRun.scout_date}</span>
+            <span style={{ color: "#6b6047" }}>
+              Last run: <span style={{ color: "#4a4430" }}>{lastRun.scout_date}</span>
             </span>
             <span class="text-zinc-600 truncate max-w-[120px]" title={lastRun.model_used}>
               {lastRun.model_used.split("/").pop()}
@@ -177,10 +180,16 @@ function ScoutPanelInner() {
                 <span
                   key={t.ticker}
                   title={`${t.sector} — ${t.thesis}`}
-                  class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan"
+                  class="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                  style={{
+                    background: "#d4a82015",
+                    border: "1px solid #d4a82030",
+                    color: "#d4a820",
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
                 >
                   {t.ticker}
-                  <span class="text-zinc-600 ml-0.5 font-normal">·{t.conviction}</span>
+                  <span style={{ color: "#6b6047", marginLeft: "2px", fontWeight: 400 }}>·{t.conviction}</span>
                 </span>
               ))}
             </div>
@@ -191,13 +200,14 @@ function ScoutPanelInner() {
       {/* settings toggle */}
       <button
         onClick={() => setShowSettings(!showSettings)}
-        class="w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-zinc-400 bg-surface-700/40 border border-surface-600 hover:border-surface-500 transition-colors"
+        class="w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs border hover:border-surface-500 transition-colors"
+        style={{ color: "#6b6047", background: "#1c1a0f40", borderColor: "#2a2618" }}
       >
         <div class="flex items-center gap-1.5">
           <Settings size={12} />
           <span>Customize</span>
           {settingsSummary && (
-            <span class="text-accent-purple text-[10px]">{settingsSummary}</span>
+            <span class="text-[10px] text-accent-amber">{settingsSummary}</span>
           )}
         </div>
         <ChevronDown
@@ -209,43 +219,40 @@ function ScoutPanelInner() {
       {/* settings panel */}
       {showSettings && (
         <div class="rounded-lg border border-surface-600 bg-surface-700/30 p-3 space-y-3">
-          {/* risk */}
           <div class="space-y-1.5">
-            <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Risk Level</div>
+            <div class="text-[10px] tracking-wider" style={{ color: "#6b6047" }}>Risk Level</div>
             <PillGroup
               options={[
                 { value: "conservative" as ScoutRiskLevel, label: "Conservative", color: "#22d3ee" },
-                { value: "moderate" as ScoutRiskLevel, label: "Moderate", color: "#fbbf24" },
-                { value: "aggressive" as ScoutRiskLevel, label: "Aggressive", color: "#f87171" },
+                { value: "moderate" as ScoutRiskLevel, label: "Moderate", color: "#d4a820" },
+                { value: "aggressive" as ScoutRiskLevel, label: "Aggressive", color: "#d95050" },
               ]}
               value={riskLevel}
               onChange={setRiskLevel}
             />
           </div>
 
-          {/* time horizon */}
           <div class="space-y-1.5">
-            <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Time Horizon</div>
+            <div class="text-[10px] tracking-wider" style={{ color: "#6b6047" }}>Time Horizon</div>
             <PillGroup
               options={[
-                { value: "short" as ScoutTimeHorizon, label: "Short (1–4w)", color: "#a78bfa" },
-                { value: "medium" as ScoutTimeHorizon, label: "Mid (1–3m)", color: "#a78bfa" },
-                { value: "long" as ScoutTimeHorizon, label: "Long (6–12m)", color: "#a78bfa" },
+                { value: "short" as ScoutTimeHorizon, label: "Short (1–4w)", color: "#d4a820" },
+                { value: "medium" as ScoutTimeHorizon, label: "Mid (1–3m)", color: "#d4a820" },
+                { value: "long" as ScoutTimeHorizon, label: "Long (6–12m)", color: "#d4a820" },
               ]}
               value={timeHorizon}
               onChange={setTimeHorizon}
             />
           </div>
 
-          {/* style */}
           <div class="space-y-1.5">
-            <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Style</div>
+            <div class="text-[10px] tracking-wider" style={{ color: "#6b6047" }}>Style</div>
             <PillGroup
               options={[
-                { value: "any" as ScoutStyle, label: "Any", color: "#94a3b8" },
-                { value: "growth" as ScoutStyle, label: "Growth", color: "#4ade80" },
-                { value: "value" as ScoutStyle, label: "Value", color: "#fbbf24" },
-                { value: "momentum" as ScoutStyle, label: "Momentum", color: "#f97316" },
+                { value: "any" as ScoutStyle, label: "Any", color: "#6b6047" },
+                { value: "growth" as ScoutStyle, label: "Growth", color: "#6bcb77" },
+                { value: "value" as ScoutStyle, label: "Value", color: "#d4a820" },
+                { value: "momentum" as ScoutStyle, label: "Momentum", color: "#e8673a" },
                 { value: "quality" as ScoutStyle, label: "Quality", color: "#22d3ee" },
               ]}
               value={style}
@@ -253,7 +260,6 @@ function ScoutPanelInner() {
             />
           </div>
 
-          {/* sectors */}
           <SectorSelect selected={focusSectors} onChange={setFocusSectors} />
         </div>
       )}
@@ -262,10 +268,15 @@ function ScoutPanelInner() {
       <button
         onClick={handleRun}
         disabled={mutation.isPending}
-        class="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold bg-accent-purple/15 border border-accent-purple/30 text-accent-purple hover:bg-accent-purple/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        class="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{
+          background: "#e8673a18",
+          border: "1px solid #e8673a35",
+          color: "#e8673a",
+        }}
       >
         {mutation.isPending ? (
-          <div class="w-3.5 h-3.5 border-2 border-accent-purple border-t-transparent rounded-full animate-spin" />
+          <div class="w-3.5 h-3.5 border-2 border-accent-orange border-t-transparent rounded-full animate-spin" />
         ) : (
           <Play size={12} />
         )}
@@ -279,7 +290,7 @@ function ScoutPanelInner() {
       )}
 
       {mutation.data && !mutation.isPending && (
-        <div class="text-xs text-accent-purple bg-accent-purple/10 border border-accent-purple/20 rounded-lg px-3 py-2">
+        <div class="text-xs text-accent-amber bg-accent-amber/10 border border-accent-amber/20 rounded-lg px-3 py-2">
           Scout queued — {mutation.data.status}
         </div>
       )}

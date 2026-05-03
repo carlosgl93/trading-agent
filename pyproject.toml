@@ -41,6 +41,11 @@ backend = [
     "alpaca-py>=0.35",
     "python-dotenv>=1.0",
 ]
+test = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "fakeredis[aioredis]>=2.26",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"

@@ -20,12 +20,17 @@ function ExecutionLogsInner() {
       <div class="rounded-xl border border-surface-500 bg-surface-800 p-4 space-y-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <ScrollText size={16} class="text-accent-cyan" />
-            <h2 class="text-sm font-semibold text-zinc-100">Execution Logs</h2>
+            <ScrollText size={16} class="text-accent-amber" />
+            <h2
+              class="text-sm font-semibold"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+            >
+              Execution Logs
+            </h2>
           </div>
           <div class="flex items-center gap-2">
             {logs && (
-              <span class="text-[10px] text-zinc-500">{logs.length} results</span>
+              <span class="text-[10px]" style={{ color: "#6b6047" }}>{logs.length} results</span>
             )}
             <button
               onClick={() => refetch()}
@@ -39,7 +44,7 @@ function ExecutionLogsInner() {
 
         {isLoading && (
           <div class="flex items-center justify-center py-8">
-            <div class="w-5 h-5 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+            <div class="w-5 h-5 border-2 border-accent-amber border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
@@ -50,13 +55,13 @@ function ExecutionLogsInner() {
         )}
 
         {!isLoading && !isError && (!logs || logs.length === 0) && (
-          <div class="text-xs text-zinc-500 text-center py-6">
+          <div class="text-xs text-center py-6" style={{ color: "#6b6047" }}>
             No execution logs yet. Submit a ticker to begin.
           </div>
         )}
 
         {logs && logs.length > 0 && (
-          <div class="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+          <div class="space-y-2 max-h-[400px] overflow-y-auto pr-1">
             {logs.map((log) => (
               <TradingLogCard
                 key={log.id}

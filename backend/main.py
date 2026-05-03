@@ -445,20 +445,7 @@ async def manual_trade(
 # WebSocket — real-time task events
 # ---------------------------------------------------------------------------
 
-@app.get(
-    "/ws",
-    tags=["realtime"],
-    summary="Real-time task events (WebSocket)",
-    description=(
-        "WebSocket endpoint. Connect to receive `task_complete` events whenever a "
-        "Celery task finishes. An initial `{\"type\": \"connected\"}` message is sent "
-        "on handshake. Events follow the agreed payload shape:\n\n"
-        "```json\n"
-        "{\"type\": \"task_complete\", \"kind\": \"analysis\", \"ticker\": \"NVDA\", "
-        "\"tickers\": null, \"status\": \"executed\", \"task_id\": \"abc-123\"}\n"
-        "```"
-    ),
-)
+@app.websocket("/ws")
 async def websocket_events(websocket: WebSocket):
     await websocket.accept()
     r: aioredis.Redis = aioredis.from_url(REDIS_URL)

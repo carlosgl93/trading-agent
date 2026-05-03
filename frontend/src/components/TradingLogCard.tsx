@@ -19,12 +19,12 @@ export default function TradingLogCard({ log, paid, onSelect, isSelected }: Trad
     <div
       onClick={() => onSelect?.(log.id)}
       class={`rounded-lg border p-3 space-y-2 transition-colors ${
-        onSelect ? "cursor-pointer hover:border-accent-cyan/40 hover:bg-surface-700/60" : ""
+        onSelect ? "cursor-pointer hover:border-accent-amber/40 hover:bg-surface-700/60" : ""
       } ${
         isSelected
-          ? "border-accent-cyan/50 bg-surface-700/70"
+          ? "border-accent-amber/50 bg-surface-700/70"
           : paid
-          ? "border-gold-500/30 bg-surface-700/70"
+          ? "border-accent-amber/30 bg-surface-700/70"
           : "border-surface-500 bg-surface-800"
       }`}
     >
@@ -44,7 +44,7 @@ export default function TradingLogCard({ log, paid, onSelect, isSelected }: Trad
           {onSelect && (
             <ChevronRight
               size={13}
-              class={`transition-colors ${isSelected ? "text-accent-cyan" : "text-zinc-600"}`}
+              class={`transition-colors ${isSelected ? "text-accent-amber" : "text-zinc-600"}`}
             />
           )}
         </div>
