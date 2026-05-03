@@ -25,8 +25,13 @@ function AnalysisEngineInner() {
     <div class="rounded-xl border border-surface-500 bg-surface-800 p-4 space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <Zap size={16} class="text-accent-cyan" />
-          <h2 class="text-sm font-semibold text-zinc-100">Command Center</h2>
+          <Zap size={16} class="text-accent-amber" />
+          <h2
+            class="text-sm font-semibold"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+          >
+            Command Center
+          </h2>
         </div>
         <div class="flex items-center gap-1.5">
           {isPaid && (
@@ -37,9 +42,7 @@ function AnalysisEngineInner() {
           )}
           <button
             onClick={() => setIsPaid(!isPaid)}
-            class={`relative w-9 h-5 rounded-full transition-colors ${
-              isPaid ? "bg-gold-500" : "bg-surface-500"
-            }`}
+            class={`relative w-9 h-5 rounded-full transition-colors ${isPaid ? "bg-accent-amber" : "bg-surface-500"}`}
           >
             <span
               class={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
@@ -51,13 +54,15 @@ function AnalysisEngineInner() {
       </div>
 
       {isPaid && (
-        <div class="rounded-lg border border-gold-500/20 bg-gold-500/5 px-3 py-2">
+        <div class="rounded-lg border border-accent-amber/20 bg-accent-amber/5 px-3 py-2">
           <div class="flex items-center gap-2 text-xs">
-            <Cpu size={12} class="text-gold-400" />
-            <span class="text-gold-300 font-medium">Lead Model</span>
-            <span class="text-gold-400 font-bold glow-gold-text">deepseek-v4-flash</span>
+            <Cpu size={12} class="text-accent-amber" />
+            <span class="font-medium" style={{ color: "#e8e0c8" }}>Lead Model</span>
+            <span class="font-bold text-accent-amber glow-amber-text" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              deepseek-v4-flash
+            </span>
           </div>
-          <p class="text-[10px] text-zinc-400 mt-1">
+          <p class="text-[10px] mt-1" style={{ color: "#6b6047" }}>
             Premium routing with full model ladder fallback chain
           </p>
         </div>
@@ -82,7 +87,7 @@ function AnalysisEngineInner() {
       )}
 
       {sequenceMutation.data && (
-        <div class="text-xs text-accent-cyan bg-accent-cyan/10 border border-accent-cyan/20 rounded-lg px-3 py-2">
+        <div class="text-xs text-accent-amber bg-accent-amber/10 border border-accent-amber/20 rounded-lg px-3 py-2">
           Sequence queued: {sequenceMutation.data.tickers.join(", ")} ({sequenceMutation.data.status})
         </div>
       )}

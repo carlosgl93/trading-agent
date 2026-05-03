@@ -12,10 +12,10 @@ interface Props {
 }
 
 function convictionColor(n: number): string {
-  if (n >= 5) return "#4ade80";
-  if (n >= 4) return "#22d3ee";
-  if (n >= 3) return "#fbbf24";
-  return "#94a3b8";
+  if (n >= 5) return "#6bcb77";
+  if (n >= 4) return "#d4a820";
+  if (n >= 3) return "#e8673a";
+  return "#6b6047";
 }
 
 function ConvictionStars({ n }: { n: number }) {
@@ -39,9 +39,9 @@ function OrderResult({ result }: { result: TradeOrderResult }) {
     <div
       class="flex items-center gap-1.5 text-[10px] rounded px-2 py-1"
       style={{
-        background: ok ? "#4ade8012" : "#94a3b812",
-        border: `1px solid ${ok ? "#4ade8030" : "#94a3b830"}`,
-        color: ok ? "#4ade80" : "#94a3b8",
+        background: ok ? "#6bcb7712" : "#6b604712",
+        border: `1px solid ${ok ? "#6bcb7730" : "#6b604730"}`,
+        color: ok ? "#6bcb77" : "#6b6047",
       }}
     >
       {ok
@@ -139,7 +139,7 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
         {/* header */}
         <div class="flex items-center justify-between px-5 py-4 border-b border-surface-600 shrink-0">
           <div class="flex items-center gap-2.5">
-            <Bot size={16} class="text-accent-purple" />
+            <Bot size={16} class="text-accent-amber" />
             <span class="font-bold text-base text-zinc-100">Scout Run</span>
             <span class="text-[11px] text-zinc-500 bg-surface-700 px-2 py-0.5 rounded-full">
               {entry.scout_date}
@@ -221,7 +221,7 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
                   type="number"
                   value={notional}
                   onInput={(e) => setNotional(Math.max(1, Number((e.target as HTMLInputElement).value)))}
-                  class="w-16 bg-surface-700 border border-surface-500 rounded px-2 py-0.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-cyan/50 text-right"
+                  class="w-16 bg-surface-700 border border-surface-500 rounded px-2 py-0.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-amber/50 text-right"
                   min="1"
                   step="50"
                 />
@@ -433,10 +433,10 @@ export default function ScoutDetailDrawer({ entry, onClose }: Props) {
             <button
               onClick={handleAnalyze}
               disabled={noneSelected || sequenceMutation.isPending || sequenceMutation.isSuccess}
-              class="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold bg-accent-amber/15 border border-accent-amber/30 text-accent-amber hover:bg-accent-amber/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {sequenceMutation.isPending ? (
-                <div class="w-3.5 h-3.5 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+                <div class="w-3.5 h-3.5 border-2 border-accent-amber border-t-transparent rounded-full animate-spin" />
               ) : (
                 <Play size={12} />
               )}

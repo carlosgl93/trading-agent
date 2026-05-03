@@ -6,7 +6,8 @@ import ScoutPanel from "../components/ScoutPanel";
 import ScoutHistory from "../components/ScoutHistory";
 import PortfolioMonitor from "../components/PortfolioMonitor";
 import ExecutionLogs from "../components/ExecutionLogs";
-import { TrendingUp, Activity } from "lucide-preact";
+import AgentActivityFeed from "../components/AgentActivityFeed";
+import { TrendingUp } from "lucide-preact";
 ---
 
 <html lang="en">
@@ -14,43 +15,56 @@ import { TrendingUp, Activity } from "lucide-preact";
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TradingAgents — Live Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body class="min-h-screen">
     <header class="bg-surface-900 border-b border-surface-600 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-accent-cyan/15 flex items-center justify-center">
-          <TrendingUp size={18} class="text-accent-cyan" />
+        <div class="w-8 h-8 rounded-lg bg-accent-amber/15 flex items-center justify-center">
+          <TrendingUp size={18} class="text-accent-amber" />
         </div>
         <div>
-          <h1 class="text-sm font-bold text-zinc-100">TradingAgents</h1>
-          <p class="text-[11px] text-zinc-500">Multi-agent trading · OpenRouter · Alpaca Paper</p>
+          <h1
+            class="text-sm font-semibold"
+            style="font-family: 'Space Grotesk', sans-serif; color: var(--color-text-base)"
+          >
+            TradingAgents
+          </h1>
+          <p class="text-[11px]" style="color: var(--color-text-muted)">
+            Multi-agent trading · OpenRouter · Alpaca Paper
+          </p>
         </div>
       </div>
-      <div class="flex items-center gap-2 text-xs text-zinc-500">
-        <Activity size={12} />
-        <span>v0.1.0</span>
-      </div>
+      <SystemStatus client:load />
     </header>
 
-    <main class="p-4 max-w-7xl mx-auto space-y-4">
-      <SystemStatus client:load />
+    <main class="p-4 max-w-[1440px] mx-auto">
+      <div class="grid grid-cols-1 lg:grid-cols-[22%_1fr_26%] gap-4 items-start">
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div class="lg:col-span-1 space-y-4">
+        <!-- Left: Controls -->
+        <div class="space-y-4">
           <AnalysisEngine client:load />
           <ScoutPanel client:load />
         </div>
 
-        <div class="lg:col-span-1">
-          <PortfolioMonitor client:load />
+        <!-- Center: Agent Activity (hero) -->
+        <div class="space-y-4">
+          <AgentActivityFeed client:load />
+          <ScoutHistory client:load />
         </div>
 
-        <div class="lg:col-span-1">
+        <!-- Right: Results -->
+        <div class="space-y-4">
+          <PortfolioMonitor client:load />
           <ExecutionLogs client:load />
         </div>
-      </div>
 
-      <ScoutHistory client:load />
+      </div>
     </main>
   </body>
 </html>

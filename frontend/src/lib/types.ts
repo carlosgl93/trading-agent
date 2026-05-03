@@ -113,18 +113,18 @@ export interface ScoutDispatched {
 }
 
 export const STATUS_COLORS: Record<string, string> = {
-  executed: "#4ade80",
-  skipped: "#64748b",
-  failed: "#f87171",
-  pending: "#fbbf24",
+  executed: "#6bcb77",
+  skipped: "#6b6047",
+  failed: "#d95050",
+  pending: "#d4a820",
 };
 
 export const RATING_COLORS: Record<string, string> = {
-  Buy: "#4ade80",
-  Overweight: "#86efac",
-  Hold: "#94a3b8",
-  Underweight: "#fca5a5",
-  Sell: "#f87171",
+  Buy: "#6bcb77",
+  Overweight: "#6bcb77",
+  Hold: "#d4a820",
+  Underweight: "#d95050",
+  Sell: "#d95050",
 };
 
 export const MODEL_LADDER = ["Gemma 4", "Minimax", "Nemotron", "DeepSeek"];
