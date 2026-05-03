@@ -19,6 +19,10 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 RUN useradd --create-home appuser
+
+RUN mkdir -p /home/appuser/.tradingagents/cache && \
+    chown -R appuser:appuser /home/appuser/.tradingagents
+
 USER appuser
 WORKDIR /home/appuser/app
 
