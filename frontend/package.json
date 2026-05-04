@@ -10,6 +10,7 @@
   "dependencies": {
     "@astrojs/preact": "^4.0.0",
     "@supabase/supabase-js": "^2.49.0",
+    "@preact/signals": "^2.9.0",
     "@tanstack/preact-query": "^5.100.7",
     "astro": "^5.0.0",
     "lucide-preact": "^1.14.0",

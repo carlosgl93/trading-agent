@@ -18,8 +18,7 @@ let backoff = 1000;
 export function startWebSocket() {
   if (typeof window === "undefined") return;
 
-  const wsUrl =
-    BACKEND_URL.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://") + "/ws";
+  const wsUrl = BACKEND_URL.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://") + "/ws";
 
   wsStatus.value = "connecting";
 
@@ -30,7 +29,7 @@ export function startWebSocket() {
     backoff = 1000;
   };
 
-  ws.onmessage = (event) => {
+  ws.onmessage = event => {
     try {
       const parsed: TaskEvent = JSON.parse(event.data);
       lastEvent.value = parsed;
