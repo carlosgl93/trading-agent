@@ -1,0 +1,53 @@
+TradingAgents SaaS — Implementation Progress
+============================================
+Last updated: 2026-05-03
+
+PHASE 1 — Tenancy
+-----------------
+[x] TASK-001  SQL migration: add user_id to existing tables         (migrations/004_add_user_id.sql)
+[x] TASK-002  SQL migration: user_credits, credit_transactions, user_settings (migrations/005_saas_tables.sql)
+[x] TASK-003  SQL migration: vault helper RPCs                      (migrations/006_vault_helpers.sql)
+[x] TASK-004  pyproject.toml: add PyJWT, stripe, cryptography
+[x] TASK-005  backend/auth.py: JWT dependency                       (NEW FILE)
+[x] TASK-006  backend/db.py: user_id scoping + credit helpers
+[x] TASK-007  backend/main.py: auth on all routes + /credits endpoint
+[x] TASK-015  .env.example: new env vars (SUPABASE_JWT_SECRET, STRIPE_*)
+              Also: migrations/007_credit_rpcs.sql (atomic debit/credit RPCs)
+
+PHASE 2 — Credits
+-----------------
+[x] TASK-010  backend/tasks.py: user_id + credit debit + vault keys
+
+PHASE 3 — Stripe
+----------------
+[x] TASK-011  backend/stripe_client.py                              (NEW FILE)
+[x] TASK-012  backend/main.py: /webhooks/stripe
+[x] TASK-013  backend/main.py: /checkout/* + /billing/portal
+
+PHASE 4 — Vault
+---------------
+[x] TASK-008  backend/vault.py                                      (NEW FILE)
+[x] TASK-009  backend/alpaca_client.py: per-user keys
+[x] TASK-014  backend/main.py: /settings/alpaca
+
+PHASE 5 — Frontend
+------------------
+[x] TASK-016  frontend: Supabase auth (login.astro, supabase.ts, script-based guard)
+[x] TASK-017  frontend: CreditBalance component
+[x] TASK-018  frontend: BillingSettings + AlpacaKeyForm components
+[x] TASK-019  frontend: UserNav (Header/Nav with credits + user info)
+[x] TASK-020  frontend: AnalysisEngine credit awareness + hooks/index.ts auth
+
+PHASE 6 — Polish
+----------------
+[ ] ScoutPanel credit awareness (similar to AnalysisEngine)
+[ ] Install new npm + pip deps (npm install, pip install -e ".[backend]")
+[ ] Supabase migrations: run 004-007 in SQL editor
+[ ] Set SUPABASE_JWT_SECRET in .env
+[ ] Create Stripe products + set price IDs
+
+SUMMARY
+-------
+Total: 20 tasks
+Done:  20 (core implementation)
+Remaining: Setup/config steps + ScoutPanel polish

@@ -4,14 +4,26 @@ import os
 from datetime import date
 from typing import List, Optional
 
+import stripe as stripe_lib
 from celery import chain as celery_chain
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import redis.asyncio as aioredis
 
 from backend.alpaca_client import close_position as alpaca_close_position, submit_order
-from backend.db import get_latest_results, get_open_positions, get_scouting_log, get_trade_log_by_id
+from backend.auth import get_current_user
+from backend.db import (
+    credit_user,
+    get_credit_balance,
+    get_credit_transactions,
+    get_latest_results,
+    get_open_positions,
+    get_scouting_log,
+    get_trade_log_by_id,
+    get_user_settings,
+    upsert_user_settings,
+)
 from backend.review_task import review_all_positions
 from backend.scout_task import scout_tickers
 from backend.tasks import analyze_and_trade
@@ -28,29 +40,29 @@ class TradeLog(BaseModel):
     id: str
     ticker: str
     analysis_date: str
-    rating: Optional[str] = Field(None, example="Buy", description="Buy | Overweight | Hold | Underweight | Sell")
+    rating: Optional[str] = Field(None, example="Buy")
     model_used: str
     alpaca_order_id: Optional[str] = None
-    execution_status: str = Field(example="executed", description="executed | skipped | failed | pending")
+    execution_status: str = Field(example="executed")
     created_at: str
 
 
 class TradeLogDetail(TradeLog):
-    reasoning: Optional[str] = Field(None, description="Portfolio Manager's raw decision text")
-    raw_report: Optional[dict] = Field(None, description="Structured report data")
+    reasoning: Optional[str] = None
+    raw_report: Optional[dict] = None
 
 
 class PortfolioPosition(BaseModel):
     id: str
     ticker: str
-    direction: str = Field(example="long", description="long | short")
-    entry_rating: str = Field(example="Buy")
+    direction: str
+    entry_rating: str
     entry_date: str
     entry_order_id: Optional[str] = None
     exit_order_id: Optional[str] = None
     exit_date: Optional[str] = None
     exit_rating: Optional[str] = None
-    status: str = Field(example="open", description="open | closed")
+    status: str
     last_reviewed_at: Optional[str] = None
     created_at: str
 
@@ -60,7 +72,7 @@ class TaskQueued(BaseModel):
     ticker: str
     analysis_date: str
     paid: bool
-    status: str = Field(example="queued")
+    status: str
 
 
 class SequenceQueued(BaseModel):
@@ -68,14 +80,14 @@ class SequenceQueued(BaseModel):
     tickers: List[str]
     analysis_date: str
     paid: bool
-    status: str = Field(example="chained — running sequentially")
+    status: str
 
 
 class ReviewDispatched(BaseModel):
     task_id: str
     open_positions: int
     tickers: List[str]
-    status: str = Field(example="dispatched")
+    status: str
 
 
 class ScoutDispatched(BaseModel):
@@ -83,7 +95,7 @@ class ScoutDispatched(BaseModel):
     paid: bool
     max_picks: int
     min_conviction: int
-    status: str = Field(example="scouting")
+    status: str
 
 
 class ScoutLogEntry(BaseModel):
@@ -98,85 +110,58 @@ class ScoutLogEntry(BaseModel):
 class TradeOrder(BaseModel):
     order_id: Optional[str] = None
     ticker: str
-    side: str = Field(description="buy | sell | close")
-    notional: Optional[float] = Field(None, description="USD notional (None for close)")
-    alpaca_status: str = Field(description="Alpaca order status or 'no_position'")
+    side: str
+    notional: Optional[float] = None
+    alpaca_status: str
 
 
-class ErrorResponse(BaseModel):
-    error: str
+class CreditBalance(BaseModel):
+    balance: int
+    transactions: list
+
+
+class CheckoutSession(BaseModel):
+    url: str
+
+
+class BillingPortal(BaseModel):
+    url: str
+
+
+class AlpacaSettings(BaseModel):
+    api_key: str = Field(..., min_length=1)
+    api_secret: str = Field(..., min_length=1)
+    paper: bool = True
+
+
+class AlpacaSettingsSaved(BaseModel):
+    status: str
 
 
 # ---------------------------------------------------------------------------
-# App + tags metadata
+# App
 # ---------------------------------------------------------------------------
 
 _TAGS = [
-    {
-        "name": "health",
-        "description": "Service liveness check.",
-    },
-    {
-        "name": "analysis",
-        "description": (
-            "Trigger multi-agent stock analysis via OpenRouter LLMs. "
-            "Tasks run on Celery workers and results are stored in Supabase. "
-            "Use `paid=true` to use **deepseek/deepseek-v4-flash** as the primary model "
-            "instead of the free-tier ladder."
-        ),
-    },
-    {
-        "name": "results",
-        "description": "Read analysis logs stored in the `trading_logs` Supabase table.",
-    },
-    {
-        "name": "portfolio",
-        "description": (
-            "Portfolio position management. Positions are opened automatically "
-            "when a Buy/Sell trade executes. Reviews run on a Beat schedule "
-            "(12:00 PM ET and 3:30 PM ET Mon–Fri) and exit positions when the signal flips."
-        ),
-    },
-    {
-        "name": "trading",
-        "description": (
-            "Direct manual Alpaca paper-trading actions. "
-            "Use **buy** / **sell** for notional market orders, or **close** to fully exit an open position."
-        ),
-    },
-    {
-        "name": "realtime",
-        "description": (
-            "WebSocket endpoint for real-time task completion events. "
-            "Connect to `/ws` to receive `task_complete` events as Celery tasks finish."
-        ),
-    },
+    {"name": "health", "description": "Service liveness check."},
+    {"name": "analysis", "description": "Trigger multi-agent stock analysis."},
+    {"name": "results", "description": "Read analysis logs."},
+    {"name": "portfolio", "description": "Portfolio position management."},
+    {"name": "trading", "description": "Direct manual Alpaca paper-trading actions."},
+    {"name": "credits", "description": "Credit balance and billing."},
+    {"name": "settings", "description": "User configuration and Alpaca keys."},
+    {"name": "realtime", "description": "WebSocket real-time task events."},
 ]
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 app = FastAPI(
     title="TradingAgents API",
-    version="1.0.0",
+    version="2.0.0",
     description=(
-        "Automated multi-agent trading platform built on the **TradingAgents** framework.\n\n"
-        "### Architecture\n"
-        "- **LLM provider**: OpenRouter (free-tier model ladder + optional paid model)\n"
-        "- **Agent graph**: 4 analysts → researchers → trader → risk team → portfolio manager\n"
-        "- **Parallelism**: analysts run concurrently to cut wall-clock time ~4×\n"
-        "- **Broker**: Celery + Redis\n"
-        "- **Storage**: Supabase (PostgreSQL)\n"
-        "- **Trading**: Alpaca Paper Trading API\n\n"
-        "### Model ladder (free tier)\n"
-        "```\n"
-        "google/gemma-4-31b-it:free → google/gemma-4-26b-a4b-it:free\n"
-        "→ minimax/minimax-m2.5:free → nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free\n"
-        "→ openrouter/owl-alpha → deepseek/deepseek-v3.2\n"
-        "```\n"
-        "With `paid=true`: **deepseek/deepseek-chat** leads, free models are the fallback.\n\n"
-        "### Retry strategy\n"
-        "429 / 404 / 502 / 503 / 524 → switch model (15 s gap). "
-        "After full cycle → exponential backoff (60 → 120 → 240 s)."
+        "Automated multi-agent trading platform — multi-tenant SaaS edition.\n\n"
+        "All endpoints except `/health`, `/ws`, and `/webhooks/stripe` require "
+        "a Supabase JWT in the `Authorization: Bearer <token>` header."
     ),
     openapi_tags=_TAGS,
     contact={"name": "Carlos Gumucio", "email": "cgumucio93@gmail.com"},
@@ -192,97 +177,43 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Health (public)
 # ---------------------------------------------------------------------------
 
-@app.get(
-    "/health",
-    tags=["health"],
-    response_model=HealthResponse,
-    summary="Health check",
-)
+@app.get("/health", tags=["health"], response_model=HealthResponse)
 async def health():
     return {"status": "ok"}
 
 
-@app.get(
-    "/results",
-    tags=["results"],
-    response_model=List[TradeLog],
-    summary="Latest analysis results",
-    description="Returns the most recent rows from `trading_logs`, newest first.",
-)
-async def results(
-    limit: int = Query(default=50, ge=1, le=200, description="Number of rows to return (max 200)"),
-):
-    return get_latest_results(limit=limit)
+# ---------------------------------------------------------------------------
+# Analysis
+# ---------------------------------------------------------------------------
 
-
-@app.get(
-    "/results/{log_id}",
-    tags=["results"],
-    response_model=TradeLogDetail,
-    summary="Full analysis detail",
-    description="Returns a single `trading_logs` row including `reasoning` and `raw_report`.",
-)
-async def result_detail(log_id: str):
-    record = get_trade_log_by_id(log_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Log entry not found")
-    return record
-
-
-@app.post(
-    "/test-task/{ticker}",
-    tags=["analysis"],
-    response_model=TaskQueued,
-    summary="Trigger single-ticker analysis",
-    description=(
-        "Enqueues one `analyze_and_trade` Celery task for the given ticker. "
-        "Use for smoke-testing a single symbol before running a full sequence."
-    ),
-)
+@app.post("/test-task/{ticker}", tags=["analysis"], response_model=TaskQueued)
 async def test_task(
     ticker: str,
-    analysis_date: Optional[str] = Query(None, example="2026-05-01", description="ISO date (defaults to today)"),
-    paid: bool = Query(False, description="Use deepseek/deepseek-chat as primary model"),
+    analysis_date: Optional[str] = Query(None, example="2026-05-01"),
+    paid: bool = Query(False),
+    user_id: str = Depends(get_current_user),
 ):
     ad = analysis_date or str(date.today())
-    task = analyze_and_trade.delay(ticker.upper(), ad, paid=paid)
+    task = analyze_and_trade.delay(ticker.upper(), ad, paid=paid, user_id=user_id)
     return {"task_id": task.id, "ticker": ticker.upper(), "analysis_date": ad, "paid": paid, "status": "queued"}
 
 
-@app.post(
-    "/run-sequence",
-    tags=["analysis"],
-    response_model=SequenceQueued,
-    summary="Run a ticker list sequentially",
-    description=(
-        "Builds a Celery chain so each ticker's analysis starts **only after** the previous one "
-        "completes. This prevents concurrent free-tier rate-limit collisions.\n\n"
-        "```bash\n"
-        "# Free tier\n"
-        'curl -X POST http://localhost:8000/run-sequence \\\n'
-        '     -H "Content-Type: application/json" \\\n'
-        "     -d '[\"VST\", \"LLY\", \"NVDA\"]'\n\n"
-        "# Paid (deepseek-v4-flash first)\n"
-        'curl -X POST "http://localhost:8000/run-sequence?paid=true" \\\n'
-        '     -H "Content-Type: application/json" \\\n'
-        "     -d '[\"VST\", \"LLY\", \"NVDA\"]'\n"
-        "```"
-    ),
-)
+@app.post("/run-sequence", tags=["analysis"], response_model=SequenceQueued)
 async def run_sequence(
     tickers: List[str],
-    analysis_date: Optional[str] = Query(None, description="ISO date (defaults to today)"),
-    paid: bool = Query(False, description="Use deepseek/deepseek-chat as primary model"),
+    analysis_date: Optional[str] = Query(None),
+    paid: bool = Query(False),
+    user_id: str = Depends(get_current_user),
 ):
     if not tickers:
-        return {"error": "tickers list is empty"}
+        raise HTTPException(status_code=400, detail="tickers list is empty")
     ad = analysis_date or str(date.today())
     cleaned = [t.upper() for t in tickers]
     steps = celery_chain(*[
-        analyze_and_trade.si(t, ad, _seq_pos=i, _seq_tickers=cleaned, paid=paid)
+        analyze_and_trade.si(t, ad, _seq_pos=i, _seq_tickers=cleaned, paid=paid, user_id=user_id)
         for i, t in enumerate(cleaned)
     ])
     result = steps.delay()
@@ -290,60 +221,60 @@ async def run_sequence(
             "paid": paid, "status": "chained — running sequentially"}
 
 
-@app.get(
-    "/positions",
-    tags=["portfolio"],
-    response_model=List[PortfolioPosition],
-    summary="List open positions",
-    description="Returns all portfolio positions with `status = open`.",
-)
-async def positions():
-    return get_open_positions()
+# ---------------------------------------------------------------------------
+# Results
+# ---------------------------------------------------------------------------
+
+@app.get("/results", tags=["results"], response_model=List[TradeLog])
+async def results(
+    limit: int = Query(default=50, ge=1, le=200),
+    user_id: str = Depends(get_current_user),
+):
+    return get_latest_results(limit=limit, user_id=user_id)
 
 
-@app.post(
-    "/review-positions",
-    tags=["portfolio"],
-    response_model=ReviewDispatched,
-    summary="Trigger position review",
-    description=(
-        "Manually dispatches a lightweight review (market + fundamentals analysts only) "
-        "for every open position. Exits a position if the new rating flips the signal.\n\n"
-        "This also runs automatically on a Beat schedule: **12:00 PM ET** and **3:30 PM ET**, Mon–Fri."
-    ),
-)
+@app.get("/results/{log_id}", tags=["results"], response_model=TradeLogDetail)
+async def result_detail(log_id: str, user_id: str = Depends(get_current_user)):
+    record = get_trade_log_by_id(log_id, user_id=user_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+    return record
+
+
+# ---------------------------------------------------------------------------
+# Portfolio
+# ---------------------------------------------------------------------------
+
+@app.get("/positions", tags=["portfolio"], response_model=List[PortfolioPosition])
+async def positions(user_id: str = Depends(get_current_user)):
+    return get_open_positions(user_id=user_id)
+
+
+@app.post("/review-positions", tags=["portfolio"], response_model=ReviewDispatched)
 async def trigger_review(
-    paid: bool = Query(False, description="Use deepseek/deepseek-chat for reviews"),
+    paid: bool = Query(False),
+    user_id: str = Depends(get_current_user),
 ):
     task = review_all_positions.delay(paid=paid)
-    open_pos = get_open_positions()
+    open_pos = get_open_positions(user_id=user_id)
     return {"task_id": task.id, "open_positions": len(open_pos),
             "tickers": [p["ticker"] for p in open_pos], "status": "dispatched"}
 
 
-@app.post(
-    "/scout",
-    tags=["analysis"],
-    response_model=ScoutDispatched,
-    summary="Trigger autonomous scout",
-    description=(
-        "Runs the macro-to-micro scout: fetches sector ETF performance and macro news, "
-        "asks the LLM to reason macro → sector → tickers, then queues the top picks "
-        "for full analysis. Also runs automatically at **9:00 AM ET** Mon–Fri.\n\n"
-        "```bash\n"
-        "curl -X POST http://localhost:8000/scout\n"
-        "curl -X POST 'http://localhost:8000/scout?paid=true&max_picks=3'\n"
-        "```"
-    ),
-)
+# ---------------------------------------------------------------------------
+# Scout
+# ---------------------------------------------------------------------------
+
+@app.post("/scout", tags=["analysis"], response_model=ScoutDispatched)
 async def trigger_scout(
-    paid: bool = Query(True, description="Use deepseek/deepseek-v4-flash as primary model"),
-    max_picks: int = Query(5, ge=1, le=10, description="Maximum tickers to queue"),
-    min_conviction: Optional[int] = Query(None, ge=1, le=5, description="Override min conviction (derived from risk_level if omitted)"),
-    risk_level: str = Query("moderate", description="conservative | moderate | aggressive"),
-    focus_sectors: List[str] = Query(default=[], description="Limit to specific sectors (empty = all)"),
-    time_horizon: str = Query("medium", description="short | medium | long"),
-    style: str = Query("any", description="any | growth | value | momentum | quality"),
+    paid: bool = Query(True),
+    max_picks: int = Query(5, ge=1, le=10),
+    min_conviction: Optional[int] = Query(None, ge=1, le=5),
+    risk_level: str = Query("moderate"),
+    focus_sectors: List[str] = Query(default=[]),
+    time_horizon: str = Query("medium"),
+    style: str = Query("any"),
+    user_id: str = Depends(get_current_user),
 ):
     _risk_conviction = {"conservative": 4, "moderate": 3, "aggressive": 2}
     resolved_conviction = min_conviction if min_conviction is not None else _risk_conviction.get(risk_level, 3)
@@ -356,93 +287,238 @@ async def trigger_scout(
         time_horizon=time_horizon,
         style=style,
     )
-    return {
-        "task_id": task.id,
-        "paid": paid,
-        "max_picks": max_picks,
-        "min_conviction": resolved_conviction,
-        "status": "scouting",
-    }
+    return {"task_id": task.id, "paid": paid, "max_picks": max_picks,
+            "min_conviction": resolved_conviction, "status": "scouting"}
 
 
-@app.get(
-    "/scout-history",
-    tags=["results"],
-    response_model=List[ScoutLogEntry],
-    summary="Recent scout results",
-    description="Returns the most recent rows from `scouting_log`, newest first.",
-)
+@app.get("/scout-history", tags=["results"], response_model=List[ScoutLogEntry])
 async def scout_history(
-    limit: int = Query(default=20, ge=1, le=100, description="Number of rows to return"),
+    limit: int = Query(default=20, ge=1, le=100),
+    user_id: str = Depends(get_current_user),
 ):
-    return get_scouting_log(limit=limit)
+    return get_scouting_log(limit=limit, user_id=user_id)
 
 
-@app.post(
-    "/trade/{ticker}",
-    tags=["trading"],
-    response_model=TradeOrder,
-    summary="Manual Alpaca order",
-    description=(
-        "Submit a direct market order to Alpaca paper trading.\n\n"
-        "- `side=buy` — notional market buy (fractional shares)\n"
-        "- `side=sell` — notional market sell / open short\n"
-        "- `side=close` — fully exit the existing position (uses Alpaca's close-position endpoint "
-        "to avoid fractional-share rounding issues)\n\n"
-        "```bash\n"
-        "curl -X POST 'http://localhost:8000/trade/NVDA?side=buy&notional=200'\n"
-        "curl -X POST 'http://localhost:8000/trade/NVDA?side=close'\n"
-        "```"
-    ),
-)
+# ---------------------------------------------------------------------------
+# Manual trading
+# ---------------------------------------------------------------------------
+
+@app.post("/trade/{ticker}", tags=["trading"], response_model=TradeOrder)
 async def manual_trade(
     ticker: str,
     side: str = Query(..., description="buy | sell | close"),
-    notional: float = Query(100.0, ge=1.0, description="USD notional (ignored for close)"),
+    notional: float = Query(100.0, ge=1.0),
+    user_id: str = Depends(get_current_user),
 ):
     ticker = ticker.upper()
     if side not in ("buy", "sell", "close"):
-        raise HTTPException(status_code=400, detail=f"Invalid side '{side}'. Must be buy, sell, or close.")
+        raise HTTPException(status_code=400, detail=f"Invalid side '{side}'.")
 
     try:
         if side == "close":
             order = alpaca_close_position(ticker)
             if order is None:
-                return TradeOrder(
-                    order_id=None, ticker=ticker, side=side,
-                    notional=None, alpaca_status="no_position",
-                )
-            return TradeOrder(
-                order_id=str(order.id), ticker=ticker, side=side,
-                notional=None, alpaca_status=str(order.status),
-            )
+                return TradeOrder(order_id=None, ticker=ticker, side=side,
+                                  notional=None, alpaca_status="no_position")
+            return TradeOrder(order_id=str(order.id), ticker=ticker, side=side,
+                              notional=None, alpaca_status=str(order.status))
         else:
             order = submit_order(ticker, side=side, notional=notional)
             return TradeOrder(
                 order_id=str(order.id) if order else None,
-                ticker=ticker,
-                side=side,
-                notional=notional,
+                ticker=ticker, side=side, notional=notional,
                 alpaca_status=str(order.status) if order else "failed",
             )
     except Exception as exc:
         detail = str(exc)
-        # Alpaca wash-trade rejection (40310000) → 409 Conflict
         if "40310000" in detail or "wash trade" in detail.lower():
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Alpaca rejected the order: potential wash trade detected "
-                    f"(an opposite-side order for {ticker} is already open). "
-                    f"To exit a long position use side=close instead of side=sell. "
-                    f"Raw: {detail}"
-                ),
-            )
+            raise HTTPException(status_code=409, detail=(
+                f"Alpaca rejected: potential wash trade for {ticker}. "
+                f"Use side=close to exit a long position. Raw: {detail}"
+            ))
         raise HTTPException(status_code=502, detail=detail)
 
 
 # ---------------------------------------------------------------------------
-# WebSocket — real-time task events
+# Credits
+# ---------------------------------------------------------------------------
+
+@app.get("/credits", tags=["credits"], response_model=CreditBalance)
+async def get_credits(user_id: str = Depends(get_current_user)):
+    balance = get_credit_balance(user_id)
+    transactions = get_credit_transactions(user_id, limit=20)
+    return {"balance": balance, "transactions": transactions}
+
+
+# ---------------------------------------------------------------------------
+# Stripe Checkout
+# ---------------------------------------------------------------------------
+
+@app.post("/checkout/subscription/{tier}", tags=["credits"], response_model=CheckoutSession)
+async def checkout_subscription(
+    tier: str,
+    user_id: str = Depends(get_current_user),
+):
+    from backend.stripe_client import (
+        PRO_PRICE_ID, SUCCESS_URL, CANCEL_URL, get_or_create_customer,
+        get_user_email_from_supabase,
+    )
+
+    if tier != "pro":
+        raise HTTPException(status_code=400, detail="Only 'pro' tier available")
+    if not PRO_PRICE_ID:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    email = get_user_email_from_supabase(user_id)
+    customer_id = get_or_create_customer(user_id, email)
+
+    session = stripe_lib.checkout.Session.create(
+        customer=customer_id,
+        mode="subscription",
+        line_items=[{"price": PRO_PRICE_ID, "quantity": 1}],
+        success_url=SUCCESS_URL,
+        cancel_url=CANCEL_URL,
+        metadata={"user_id": user_id},
+    )
+    return {"url": session.url}
+
+
+@app.post("/checkout/credits", tags=["credits"], response_model=CheckoutSession)
+async def checkout_credits(user_id: str = Depends(get_current_user)):
+    from backend.stripe_client import (
+        CREDIT_PACK_PRICE_ID, SUCCESS_URL, CANCEL_URL, get_or_create_customer,
+        get_user_email_from_supabase,
+    )
+
+    if not CREDIT_PACK_PRICE_ID:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    email = get_user_email_from_supabase(user_id)
+    customer_id = get_or_create_customer(user_id, email)
+
+    session = stripe_lib.checkout.Session.create(
+        customer=customer_id,
+        mode="payment",
+        line_items=[{"price": CREDIT_PACK_PRICE_ID, "quantity": 1}],
+        success_url=SUCCESS_URL,
+        cancel_url=CANCEL_URL,
+        metadata={"user_id": user_id, "type": "credit_pack"},
+    )
+    return {"url": session.url}
+
+
+@app.post("/billing/portal", tags=["credits"], response_model=BillingPortal)
+async def billing_portal(
+    user_id: str = Depends(get_current_user),
+    return_url: str = Query(default="http://localhost:4321/settings"),
+):
+    from backend.stripe_client import get_or_create_customer, get_user_email_from_supabase
+
+    email = get_user_email_from_supabase(user_id)
+    customer_id = get_or_create_customer(user_id, email)
+
+    session = stripe_lib.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=return_url,
+    )
+    return {"url": session.url}
+
+
+# ---------------------------------------------------------------------------
+# Stripe Webhook (public — Stripe signature verified internally)
+# ---------------------------------------------------------------------------
+
+@app.post("/webhooks/stripe", include_in_schema=False)
+async def stripe_webhook(request: Request):
+    from backend.stripe_client import WEBHOOK_SECRET, CREDIT_PACK_AMOUNT, PRO_MONTHLY_AMOUNT
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    if not WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+
+    try:
+        event = stripe_lib.Webhook.construct_event(payload, sig, WEBHOOK_SECRET)
+    except stripe_lib.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+
+    event_id = event["id"]
+    event_type = event["type"]
+    data = event["data"]["object"]
+
+    if event_type == "checkout.session.completed":
+        user_id = data.get("metadata", {}).get("user_id")
+        if not user_id:
+            return {"received": True}
+
+        mode = data.get("mode")
+        if mode == "payment":
+            credit_user(user_id, CREDIT_PACK_AMOUNT, "purchase", event_id,
+                        {"stripe_session_id": data.get("id")})
+        elif mode == "subscription":
+            credit_user(user_id, PRO_MONTHLY_AMOUNT, "subscription_refill", event_id,
+                        {"stripe_session_id": data.get("id")})
+            upsert_user_settings(user_id, tier="pro",
+                                 stripe_customer_id=data.get("customer"))
+
+    elif event_type == "invoice.paid":
+        customer_id = data.get("customer")
+        if customer_id:
+            user_id = _user_id_from_customer(customer_id)
+            if user_id:
+                credit_user(user_id, PRO_MONTHLY_AMOUNT, "subscription_refill", event_id,
+                            {"invoice_id": data.get("id")})
+
+    elif event_type == "customer.subscription.updated":
+        customer_id = data.get("customer")
+        status = data.get("status")
+        if customer_id and status == "active":
+            user_id = _user_id_from_customer(customer_id)
+            if user_id:
+                upsert_user_settings(user_id, tier="pro")
+
+    elif event_type == "customer.subscription.deleted":
+        customer_id = data.get("customer")
+        if customer_id:
+            user_id = _user_id_from_customer(customer_id)
+            if user_id:
+                upsert_user_settings(user_id, tier="free")
+
+    return {"received": True}
+
+
+def _user_id_from_customer(stripe_customer_id: str) -> Optional[str]:
+    from backend.db import get_client
+    result = (
+        get_client()
+        .table("user_settings")
+        .select("user_id")
+        .eq("stripe_customer_id", stripe_customer_id)
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]["user_id"]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Settings — Alpaca keys
+# ---------------------------------------------------------------------------
+
+@app.post("/settings/alpaca", tags=["settings"], response_model=AlpacaSettingsSaved)
+async def save_alpaca_keys(
+    body: AlpacaSettings,
+    user_id: str = Depends(get_current_user),
+):
+    from backend.vault import store_alpaca_keys
+    store_alpaca_keys(user_id, body.api_key, body.api_secret)
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — real-time task events (public)
 # ---------------------------------------------------------------------------
 
 @app.websocket("/ws")

@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import UserNav from "../components/UserNav";
 import SystemStatus from "../components/SystemStatus";
 import AnalysisEngine from "../components/AnalysisEngine";
 import ScoutPanel from "../components/ScoutPanel";
@@ -18,11 +19,25 @@ import { TrendingUp } from "lucide-preact";
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Geist:wght@400;600&family=IBM+Plex+Mono:wght@400&family=JetBrains+Mono:wght@400;700&display=swap"
       rel="stylesheet"
     />
+    <style>
+      /* Hide until auth check completes to prevent flash */
+      body { visibility: hidden; }
+    </style>
   </head>
   <body class="min-h-screen">
+    <script>
+      import { supabase } from "../lib/supabase";
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        window.location.href = "/login";
+      } else {
+        document.body.style.visibility = "visible";
+      }
+    </script>
+
     <header class="bg-surface-900 border-b border-surface-600 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-accent-amber/15 flex items-center justify-center">
@@ -31,7 +46,7 @@ import { TrendingUp } from "lucide-preact";
         <div>
           <h1
             class="text-sm font-semibold"
-            style="font-family: 'Space Grotesk', sans-serif; color: var(--color-text-base)"
+            style="font-family: 'Geist', sans-serif; color: var(--color-text-base)"
           >
             TradingAgents
           </h1>
@@ -40,7 +55,10 @@ import { TrendingUp } from "lucide-preact";
           </p>
         </div>
       </div>
-      <SystemStatus client:load />
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <SystemStatus client:load />
+        <UserNav client:load />
+      </div>
     </header>
 
     <main class="p-4 max-w-[1440px] mx-auto">

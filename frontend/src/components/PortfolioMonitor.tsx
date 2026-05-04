@@ -17,7 +17,7 @@ function PortfolioMonitorInner() {
           <Briefcase size={16} class="text-accent-amber" />
           <h2
             class="text-sm font-semibold"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+            style={{ fontFamily: "'Geist', sans-serif", color: "var(--color-text-base)" }}
           >
             Portfolio Monitor
           </h2>
