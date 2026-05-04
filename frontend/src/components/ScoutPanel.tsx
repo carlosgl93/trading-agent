@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/preact-query";
 import { Bot, Crown, Play, Settings, ChevronDown } from "lucide-preact";
 import { queryClient } from "../lib/hooks/queryClient";
 import { useScoutMutation, useScoutHistory } from "../lib/hooks";
+import { useCredits } from "../lib/hooks/useCredits";
 import {
   SCOUT_SECTORS,
   type ScoutRiskLevel,
@@ -104,7 +105,11 @@ function ScoutPanelInner() {
 
   const mutation = useScoutMutation();
   const { data: history } = useScoutHistory();
+  const { data: credits } = useCredits();
   const lastRun = history?.[0];
+  const outOfCredits = credits !== undefined && credits.balance <= 0;
+  const rawError = mutation.error?.message;
+  const errorMsg = rawError === "INSUFFICIENT_CREDITS" ? "Out of credits — top up to continue" : rawError;
 
   const handleRun = () => {
     mutation.mutate({
@@ -133,7 +138,7 @@ function ScoutPanelInner() {
           <Bot size={16} class="text-accent-amber" />
           <h2
             class="text-sm font-semibold"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+            style={{ fontFamily: "'Geist', sans-serif", color: "var(--color-text-base)" }}
           >
             Autonomous Scout
           </h2>
@@ -267,7 +272,7 @@ function ScoutPanelInner() {
       {/* run button */}
       <button
         onClick={handleRun}
-        disabled={mutation.isPending}
+        disabled={mutation.isPending || outOfCredits}
         class="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         style={{
           background: "#e8673a18",
@@ -283,9 +288,16 @@ function ScoutPanelInner() {
         {mutation.isPending ? "Scouting…" : "Run Scout Now"}
       </button>
 
-      {mutation.isError && (
+      {outOfCredits && !mutation.isPending && (
+        <div class="text-xs bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2 flex items-center justify-between" style={{ color: "#D95050" }}>
+          <span>Out of credits</span>
+          <a href="/settings" style={{ color: "#E8673A", textDecoration: "none", fontWeight: 500 }}>Top up →</a>
+        </div>
+      )}
+
+      {mutation.isError && !outOfCredits && (
         <div class="text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2">
-          {mutation.error?.message}
+          {errorMsg}
         </div>
       )}
 

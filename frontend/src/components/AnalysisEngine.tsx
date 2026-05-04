@@ -3,15 +3,21 @@ import { QueryClientProvider } from "@tanstack/preact-query";
 import { Zap, Crown, Cpu } from "lucide-preact";
 import { queryClient } from "../lib/hooks/queryClient";
 import { useAnalysisMutation } from "../lib/hooks";
+import { useCredits } from "../lib/hooks/useCredits";
 import TickerInput from "./TickerInput";
 
 function AnalysisEngineInner() {
   const [isPaid, setIsPaid] = useState(false);
   const { singleMutation, sequenceMutation } = useAnalysisMutation();
+  const { data: credits } = useCredits();
+
+  const balance = credits?.balance ?? null;
+  const outOfCredits = balance !== null && balance <= 0;
 
   const isLoading = singleMutation.isPending || sequenceMutation.isPending;
   const isError = singleMutation.isError || sequenceMutation.isError;
-  const errorMsg = singleMutation.error?.message ?? sequenceMutation.error?.message;
+  const rawError = singleMutation.error?.message ?? sequenceMutation.error?.message;
+  const errorMsg = rawError === "INSUFFICIENT_CREDITS" ? "Out of credits — top up to continue" : rawError;
 
   const handleAnalyze = (ticker: string) => {
     singleMutation.mutate({ ticker, paid: isPaid });
@@ -28,7 +34,7 @@ function AnalysisEngineInner() {
           <Zap size={16} class="text-accent-amber" />
           <h2
             class="text-sm font-semibold"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--color-text-base)" }}
+            style={{ fontFamily: "'Geist', sans-serif", color: "var(--color-text-base)" }}
           >
             Command Center
           </h2>
@@ -68,15 +74,38 @@ function AnalysisEngineInner() {
         </div>
       )}
 
+      {balance !== null && (
+        <div class="flex items-center justify-between text-[11px]" style={{ color: "#6b6047" }}>
+          <span style={{ fontFamily: "'DM Sans', sans-serif" }}>1 credit per analysis</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: outOfCredits ? "#D95050" : "#D4A820" }}>
+            {balance} left
+          </span>
+        </div>
+      )}
+
       <TickerInput
         onAnalyze={handleAnalyze}
         onRunSequence={handleRunSequence}
-        disabled={isLoading}
+        disabled={isLoading || outOfCredits}
       />
 
-      {isError && (
+      {outOfCredits && !isLoading && (
+        <div class="text-xs bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2 flex items-center justify-between" style={{ color: "#D95050" }}>
+          <span>Out of credits</span>
+          <a href="/settings" style={{ color: "#E8673A", textDecoration: "none", fontWeight: 500 }}>Top up →</a>
+        </div>
+      )}
+
+      {isError && !outOfCredits && (
         <div class="text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2">
           {errorMsg}
+        </div>
+      )}
+
+      {isError && rawError === "INSUFFICIENT_CREDITS" && (
+        <div class="text-xs bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2 flex items-center justify-between" style={{ color: "#D95050" }}>
+          <span>{errorMsg}</span>
+          <a href="/settings" style={{ color: "#E8673A", textDecoration: "none", fontWeight: 500 }}>Top up →</a>
         </div>
       )}
 

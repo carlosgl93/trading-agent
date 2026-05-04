@@ -18,9 +18,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.outputs import LLMResult
 
-from backend.alpaca_client import submit_order
 from backend.celery_app import celery_app
-from backend.db import log_trade, open_position
+from backend.db import debit_credit, log_trade, open_position
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
@@ -34,9 +33,6 @@ FREE_MODELS = [
     "openrouter/owl-alpha",
 ]
 
-# Paid-first list. deepseek-v4-flash is a thinking model — if it hits the
-# reasoning_content multi-turn constraint, the cycling logic catches it and
-# falls back to deepseek-v3.2, then the free ladder.
 PAID_MODELS = [
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v3.2",
@@ -57,8 +53,6 @@ _COMPRESS_PROMPT = (
     "Me no want big essay. Me want small, dense, useful summary. Caveman speak ok."
 )
 
-# Maps state-key presence to (step_number, agent_name) — drives % progress display.
-# Step numbers must be sequential 1..N.
 _PROGRESS_STEPS = [
     ("market_report",                                      1,  "Market Analyst"),
     ("sentiment_report",                                   2,  "Social Analyst"),
@@ -77,7 +71,6 @@ _TOTAL_STEPS = len(_PROGRESS_STEPS)
 
 
 def _get_nested(state: dict, dotted_key: str) -> str:
-    """Resolve 'a.b' → state['a']['b'], return empty string if missing."""
     parts = dotted_key.split(".", 1)
     val = state.get(parts[0])
     if len(parts) == 1:
@@ -88,8 +81,6 @@ def _get_nested(state: dict, dotted_key: str) -> str:
 
 
 class TokenTracker(BaseCallbackHandler):
-    """Accumulates token usage reported by OpenAI-compatible LLM responses."""
-
     def __init__(self):
         self.total = 0
         self.prompt = 0
@@ -126,6 +117,35 @@ def _build_config(model: str, *, parallel: bool = True, debate_rounds: int = 1) 
     return cfg
 
 
+def _get_alpaca_clients(user_id: Optional[str]):
+    """Return (submit_order_fn, close_position_fn) for the given user.
+
+    Uses vault-stored keys when user_id is provided, falls back to env keys.
+    """
+    from backend.alpaca_client import (
+        close_position as env_close,
+        submit_order as env_submit,
+        submit_order_for_user,
+        close_position_for_user,
+    )
+
+    if user_id:
+        try:
+            from backend.vault import get_alpaca_keys
+            api_key, api_secret = get_alpaca_keys(user_id)
+            paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+            return (
+                lambda ticker, side, notional: submit_order_for_user(
+                    api_key, api_secret, ticker, side, notional, paper
+                ),
+                lambda ticker: close_position_for_user(api_key, api_secret, ticker, paper),
+            )
+        except ValueError:
+            logger.warning("[%s] No vault keys for user %s — falling back to env keys", user_id, user_id)
+
+    return env_submit, env_close
+
+
 @celery_app.task(
     bind=True,
     max_retries=5,
@@ -140,16 +160,22 @@ def analyze_and_trade(
     _seq_pos: Optional[int] = None,
     _seq_tickers: Optional[List[str]] = None,
     paid: bool = False,
+    user_id: Optional[str] = None,
 ):
     if not analysis_date:
         analysis_date = str(date.today())
+
+    # Debit 1 credit before running (user-facing tasks only)
+    if user_id:
+        if not debit_credit(user_id):
+            logger.warning("[%s] Insufficient credits for user %s", ticker, user_id)
+            return {"ticker": ticker, "status": "insufficient_credits", "user_id": user_id}
 
     models = _get_model_list(paid)
     model = models[_model_index % len(models)]
     retry_num = self.request.retries
     start_time = time.time()
 
-    # Build sequence-context label for log lines
     if _seq_pos is not None and _seq_tickers:
         total_in_seq = len(_seq_tickers)
         remaining = _seq_tickers[_seq_pos + 1:] if _seq_pos + 1 < total_in_seq else []
@@ -160,12 +186,14 @@ def analyze_and_trade(
         remaining_label = ""
 
     logger.info(
-        "[%s]%s Starting analysis | model=%s | attempt=%d | %s",
-        ticker, f" {seq_label}" if seq_label else "", model, retry_num + 1, remaining_label,
+        "[%s]%s Starting analysis | model=%s | attempt=%d | user=%s | %s",
+        ticker, f" {seq_label}" if seq_label else "", model, retry_num + 1,
+        user_id or "system", remaining_label,
     )
 
     completed_steps: set = set()
     token_tracker = TokenTracker()
+    submit_order, close_position = _get_alpaca_clients(user_id)
 
     try:
         config = _build_config(model, parallel=False)
@@ -188,7 +216,6 @@ def analyze_and_trade(
             final_state = chunk
             elapsed = time.time() - start_time
 
-            # Check which agents have just completed and log progress
             for state_key, step_num, agent_name in _PROGRESS_STEPS:
                 if step_num in completed_steps:
                     continue
@@ -199,14 +226,9 @@ def analyze_and_trade(
                         "[%s]%s  %3d%% | step %2d/%-2d | %-22s done | elapsed=%s | tokens=%d (↑%d ↓%d)",
                         ticker,
                         f" {seq_label}" if seq_label else "",
-                        pct,
-                        step_num,
-                        _TOTAL_STEPS,
-                        agent_name,
+                        pct, step_num, _TOTAL_STEPS, agent_name,
                         _fmt_elapsed(elapsed),
-                        token_tracker.total,
-                        token_tracker.prompt,
-                        token_tracker.completion,
+                        token_tracker.total, token_tracker.prompt, token_tracker.completion,
                     )
 
         elapsed = time.time() - start_time
@@ -222,11 +244,8 @@ def analyze_and_trade(
             "[%s]%s DONE | rating=%-12s | elapsed=%s | total_tokens=%d (prompt=%d completion=%d) | %s",
             ticker,
             f" {seq_label}" if seq_label else "",
-            rating,
-            _fmt_elapsed(elapsed),
-            token_tracker.total,
-            token_tracker.prompt,
-            token_tracker.completion,
+            rating, _fmt_elapsed(elapsed),
+            token_tracker.total, token_tracker.prompt, token_tracker.completion,
             remaining_label,
         )
 
@@ -240,16 +259,22 @@ def analyze_and_trade(
             execution_status = "executed" if order_id else "failed"
             logger.info("[%s] BUY order submitted: %s", ticker, order_id)
             if order_id:
-                open_position(ticker=ticker, direction="long", entry_rating=rating,
-                              entry_date=analysis_date, entry_order_id=order_id)
+                open_position(
+                    ticker=ticker, direction="long", entry_rating=rating,
+                    entry_date=analysis_date, entry_order_id=order_id,
+                    user_id=user_id,
+                )
         elif rating in ("Sell", "Underweight"):
             order = submit_order(ticker, side="sell", notional=notional)
             order_id = str(order.id) if order else None
             execution_status = "executed" if order_id else "failed"
             logger.info("[%s] SELL order submitted: %s", ticker, order_id)
             if order_id:
-                open_position(ticker=ticker, direction="short", entry_rating=rating,
-                              entry_date=analysis_date, entry_order_id=order_id)
+                open_position(
+                    ticker=ticker, direction="short", entry_rating=rating,
+                    entry_date=analysis_date, entry_order_id=order_id,
+                    user_id=user_id,
+                )
 
         log_trade(
             ticker=ticker,
@@ -259,6 +284,7 @@ def analyze_and_trade(
             model_used=model,
             alpaca_order_id=order_id,
             execution_status=execution_status,
+            user_id=user_id,
         )
 
         return {"ticker": ticker, "rating": rating, "order_id": order_id, "status": execution_status}
@@ -277,7 +303,7 @@ def analyze_and_trade(
                 "400", "404", "502", "503", "524",
                 "overloaded", "model_error", "unavailable",
                 "No endpoints found", "timeout",
-                "reasoning_content",  # thinking-model multi-turn incompatibility
+                "reasoning_content",
             )
         )
         is_network_error = isinstance(exc, (OSError, ConnectionError)) or any(
@@ -302,7 +328,13 @@ def analyze_and_trade(
                 exc=exc,
                 countdown=backoff,
                 args=[ticker, analysis_date],
-                kwargs={"_model_index": next_index, "_seq_pos": _seq_pos, "_seq_tickers": _seq_tickers, "paid": paid},
+                kwargs={
+                    "_model_index": next_index,
+                    "_seq_pos": _seq_pos,
+                    "_seq_tickers": _seq_tickers,
+                    "paid": paid,
+                    "user_id": user_id,
+                },
             )
 
         try:
@@ -313,6 +345,7 @@ def analyze_and_trade(
                 reasoning=f"Error: {exc_str[:500]}",
                 model_used=model,
                 execution_status="failed",
+                user_id=user_id,
             )
         except Exception:
             pass

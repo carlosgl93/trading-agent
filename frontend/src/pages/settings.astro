@@ -1,0 +1,78 @@
+---
+import "../styles/global.css";
+import BillingSettings from "../components/BillingSettings";
+import AlpacaKeyForm from "../components/AlpacaKeyForm";
+import CreditBalance from "../components/CreditBalance";
+import { TrendingUp } from "lucide-preact";
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TradingAgents — Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Geist:wght@400;600&family=IBM+Plex+Mono:wght@400&family=JetBrains+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body { visibility: hidden; }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <script>
+      import { supabase } from "../lib/supabase";
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        window.location.href = "/login";
+      } else {
+        document.body.style.visibility = "visible";
+      }
+    </script>
+
+    <header class="bg-surface-900 border-b border-surface-600 px-6 py-3 flex items-center justify-between">
+      <a href="/" style="display: flex; align-items: center; gap: 12px; text-decoration: none;">
+        <div class="w-8 h-8 rounded-lg bg-accent-amber/15 flex items-center justify-center">
+          <TrendingUp size={18} class="text-accent-amber" />
+        </div>
+        <div>
+          <h1
+            class="text-sm font-semibold"
+            style="font-family: 'Geist', sans-serif; color: var(--color-text-base)"
+          >
+            TradingAgents
+          </h1>
+          <p class="text-[11px]" style="color: var(--color-text-muted)">Settings</p>
+        </div>
+      </a>
+    </header>
+
+    <main style="max-width: 640px; margin: 0 auto; padding: 32px 16px;">
+      <h2
+        style="font-family: 'Geist', sans-serif; font-weight: 600; font-size: 20px; color: #E8E0C8; margin: 0 0 24px;"
+      >
+        Settings
+      </h2>
+
+      <section
+        style="background: #141209; border: 1px solid #2A2618; border-radius: 12px; padding: 24px; margin-bottom: 16px;"
+      >
+        <CreditBalance client:load />
+      </section>
+
+      <section
+        style="background: #141209; border: 1px solid #2A2618; border-radius: 12px; padding: 24px; margin-bottom: 16px;"
+      >
+        <BillingSettings client:load />
+      </section>
+
+      <section
+        style="background: #141209; border: 1px solid #2A2618; border-radius: 12px; padding: 24px; margin-bottom: 16px;"
+      >
+        <AlpacaKeyForm client:load />
+      </section>
+    </main>
+  </body>
+</html>

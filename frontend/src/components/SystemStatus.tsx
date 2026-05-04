@@ -8,13 +8,15 @@ function SystemStatusInner() {
   const wsStatus = useTaskEvents();
 
   const isHealthy = !healthLoading && !healthError && (health?.status === "ok" || health?.status === "healthy");
+  const apiColor = healthLoading ? "#d4a820" : isHealthy ? "#6bcb77" : "#d95050";
+  const apiDotClass = healthLoading ? "bg-accent-amber agent-thinking" : isHealthy ? "bg-accent-green" : "bg-accent-red";
   const isConnected = wsStatus.value === "connected";
   const lastScout = scoutHistory?.[0];
 
   return (
     <div class="flex items-center gap-4 text-[11px]" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
-      <div class="flex items-center gap-1.5" style={{ color: isHealthy ? "#6bcb77" : "#d95050" }}>
-        <span class={`w-1.5 h-1.5 rounded-full ${isHealthy ? "bg-accent-green" : "bg-accent-red"}`} />
+      <div class="flex items-center gap-1.5" style={{ color: apiColor }}>
+        <span class={`w-1.5 h-1.5 rounded-full ${apiDotClass}`} />
         <span>API</span>
       </div>
 

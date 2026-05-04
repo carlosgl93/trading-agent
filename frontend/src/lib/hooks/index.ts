@@ -2,17 +2,18 @@ import { useEffect } from "preact/hooks";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/preact-query";
 import type { TradeLog, TradeLogDetail, PortfolioPosition, HealthStatus, AnalysisInput, TaskQueued, SequenceQueued, ScoutLogEntry, ScoutInput, ScoutDispatched, TradeOrderInput, TradeOrderResult } from "../types";
 import { BACKEND_URL } from "../types";
+import { apiFetch } from "../supabase";
 import { playNotification } from "../notify";
 import { lastEvent, wsStatus } from "../ws";
 
 async function fetchTradeLogs(): Promise<TradeLog[]> {
-  const res = await fetch(`${BACKEND_URL}/results?limit=50`);
+  const res = await apiFetch("/results?limit=50");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function fetchPositions(): Promise<PortfolioPosition[]> {
-  const res = await fetch(`${BACKEND_URL}/positions`);
+  const res = await apiFetch("/positions");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -24,7 +25,7 @@ async function fetchHealth(): Promise<HealthStatus> {
 }
 
 async function fetchScoutHistory(): Promise<ScoutLogEntry[]> {
-  const res = await fetch(`${BACKEND_URL}/scout-history`);
+  const res = await apiFetch("/scout-history");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -33,7 +34,7 @@ export function useTradeLogDetail(id: string | null) {
   return useQuery<TradeLogDetail, Error>({
     queryKey: ["trade-log-detail", id],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/results/${id}`);
+      const res = await apiFetch(`/results/${id}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
@@ -92,7 +93,7 @@ export function useTradeMutation() {
       if (input.side !== "close" && input.notional !== undefined) {
         params.set("notional", String(input.notional));
       }
-      const res = await fetch(`${BACKEND_URL}/trade/${input.ticker}?${params}`, { method: "POST" });
+      const res = await apiFetch(`/trade/${input.ticker}?${params}`, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         if (res.status === 409) throw new WashTradeError(body.detail ?? `HTTP 409`);
@@ -115,12 +116,14 @@ export function useScoutMutation() {
       if (input.time_horizon) params.set("time_horizon", input.time_horizon);
       if (input.style) params.set("style", input.style);
       input.focus_sectors?.forEach((s) => params.append("focus_sectors", s));
-      const res = await fetch(`${BACKEND_URL}/scout?${params}`, { method: "POST" });
+      const res = await apiFetch(`/scout?${params}`, { method: "POST" });
+      if (res.status === 402) throw new Error("INSUFFICIENT_CREDITS");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["scout-history"] });
+      queryClient.invalidateQueries({ queryKey: ["credits"] });
     },
   });
 }
@@ -128,34 +131,34 @@ export function useScoutMutation() {
 export function useAnalysisMutation() {
   const queryClient = useQueryClient();
 
+  const onSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: ["trade-logs"] });
+    queryClient.invalidateQueries({ queryKey: ["credits"] });
+  };
+
   const singleMutation = useMutation<TaskQueued, Error, AnalysisInput>({
     mutationFn: async (input) => {
-      const res = await fetch(`${BACKEND_URL}/test-task/${input.ticker}`, {
+      const res = await apiFetch(`/test-task/${input.ticker}?paid=${input.paid ?? false}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paid: input.paid ?? false }),
       });
+      if (res.status === 402) throw new Error("INSUFFICIENT_CREDITS");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["trade-logs"] });
-    },
+    onSuccess,
   });
 
   const sequenceMutation = useMutation<SequenceQueued, Error, { tickers: string[]; paid?: boolean }>({
     mutationFn: async (input) => {
-      const res = await fetch(`${BACKEND_URL}/run-sequence`, {
+      const res = await apiFetch(`/run-sequence?paid=${input.paid ?? false}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers: input.tickers, paid: input.paid ?? false }),
+        body: JSON.stringify(input.tickers),
       });
+      if (res.status === 402) throw new Error("INSUFFICIENT_CREDITS");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["trade-logs"] });
-    },
+    onSuccess,
   });
 
   return { singleMutation, sequenceMutation };
@@ -172,9 +175,11 @@ export function useTaskEvents() {
         case "analysis":
         case "sequence":
           queryClient.invalidateQueries({ queryKey: ["trade-logs"] });
+          queryClient.invalidateQueries({ queryKey: ["credits"] });
           break;
         case "scout":
           queryClient.invalidateQueries({ queryKey: ["scout-history"] });
+          queryClient.invalidateQueries({ queryKey: ["credits"] });
           break;
         case "review":
           queryClient.invalidateQueries({ queryKey: ["trade-logs"] });

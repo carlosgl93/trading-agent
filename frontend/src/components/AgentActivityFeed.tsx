@@ -5,7 +5,7 @@ import { useTradeLogs, useTaskEvents } from "../lib/hooks";
 import { lastEvent } from "../lib/ws";
 import type { TaskEvent } from "../lib/ws";
 
-const CALLSIGN_STYLE = { fontFamily: "'Space Grotesk', sans-serif" };
+const CALLSIGN_STYLE = { fontFamily: "'Geist', sans-serif" };
 const MONO_STYLE = { fontFamily: "'JetBrains Mono', monospace" };
 const LOG_STYLE = { fontFamily: "'IBM Plex Mono', monospace" };
 

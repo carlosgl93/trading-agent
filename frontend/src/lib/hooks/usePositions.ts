@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/preact-query";
 import type { PortfolioPosition } from "../types";
-import { BACKEND_URL } from "../types";
+import { apiFetch } from "../supabase";
 
 async function fetchPositions(): Promise<PortfolioPosition[]> {
-  const res = await fetch(`${BACKEND_URL}/positions`);
+  const res = await apiFetch("/positions");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
