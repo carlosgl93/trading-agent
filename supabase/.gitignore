@@ -1,0 +1,3 @@
+# Supabase CLI state (do not commit) — only the migrations/ folder is tracked.
+.temp
+.branches

@@ -1,0 +1,72 @@
+# Fly.io app config for TradingAgents multi-tenant stack.
+# Three process groups, each one shared-cpu-1x 256MB VM (free tier):
+#   - app:    FastAPI backend (HTTP)
+#   - worker: Celery worker (background analysis)
+#   - redis:  Redis server (Celery broker)
+# Celery beat is intentionally omitted for the POC: scheduled analysis is
+# triggered manually via the API or the frontend. To re-enable beat, add a
+# fourth process group + a fourth VM (out of free-tier budget).
+#
+# Deploy: `fly deploy`
+# After first deploy, name the redis machine so other processes can reach it
+# via stable internal DNS (see docs/deploy.md).
+
+app = "tradingagents-api"
+primary_region = "iad"
+kill_signal = "SIGINT"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile.backend"
+
+[env]
+  BACKEND_PORT = "8000"
+  ALPACA_PAPER = "true"
+  COOLDOWN_SECONDS = "30"
+  TARGET_TICKERS = "AAPL,MSFT,GOOGL,NVDA,TSLA"
+  BACKEND_CORS_ORIGIN = "*"
+  PYTHONUNBUFFERED = "1"
+
+[processes]
+  app = "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+  worker = "celery -A backend.celery_app worker --loglevel=info --concurrency=2 -Q analysis,default"
+  redis = "redis-server --appendonly no --save '' --maxmemory 200mb --maxmemory-policy allkeys-lru"
+
+[[services]]
+  processes = ["app"]
+  protocol = "tcp"
+  internal_port = 8000
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  [[services.http_checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "20s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"
+  size = "shared-cpu-1x"
+
+[[vm.override]]
+  processes = ["redis"]
+  memory = "256mb"
