@@ -1,5 +1,7 @@
 import { Zap, Plus } from "lucide-preact";
+import { QueryClientProvider } from "@tanstack/preact-query";
 import { useCredits } from "../lib/hooks/useCredits";
+import { queryClient } from "../lib/hooks/queryClient";
 import { createCheckoutSession } from "../lib/api";
 import { useState } from "preact/hooks";
 
@@ -21,6 +23,7 @@ export default function CreditBalance() {
   };
 
   return (
+    <QueryClientProvider client={queryClient}>
     <div
       style={{
         background: "#141209",
@@ -91,5 +94,6 @@ export default function CreditBalance() {
         }
       `}</style>
     </div>
+    </QueryClientProvider>
   );
 }

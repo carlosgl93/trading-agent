@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@astrojs/preact": "^4.0.0",
-    "@supabase/supabase-js": "^2.49.0",
     "@preact/signals": "^2.9.0",
     "@tanstack/preact-query": "^5.100.7",
     "astro": "^5.0.0",
@@ -17,6 +16,7 @@
     "preact": "^10.25.0"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.49.0",
     "@tailwindcss/vite": "^4.2.4",
     "@types/node": "^22.0.0",
     "tailwindcss": "^4.2.4"
