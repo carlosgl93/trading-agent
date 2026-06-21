@@ -56,8 +56,8 @@ import { TrendingUp } from "lucide-preact";
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
-        <SystemStatus client:load />
-        <UserNav client:load />
+        <SystemStatus client:only="preact" />
+        <UserNav client:only="preact" />
       </div>
     </header>
 
@@ -66,20 +66,20 @@ import { TrendingUp } from "lucide-preact";
 
         <!-- Left: Controls -->
         <div class="space-y-4">
-          <AnalysisEngine client:load />
-          <ScoutPanel client:load />
+          <AnalysisEngine client:only="preact" />
+          <ScoutPanel client:only="preact" />
         </div>
 
         <!-- Center: Agent Activity (hero) -->
         <div class="space-y-4">
-          <AgentActivityFeed client:load />
-          <ScoutHistory client:load />
+          <AgentActivityFeed client:only="preact" />
+          <ScoutHistory client:only="preact" />
         </div>
 
         <!-- Right: Results -->
         <div class="space-y-4">
-          <PortfolioMonitor client:load />
-          <ExecutionLogs client:load />
+          <PortfolioMonitor client:only="preact" />
+          <ExecutionLogs client:only="preact" />
         </div>
 
       </div>

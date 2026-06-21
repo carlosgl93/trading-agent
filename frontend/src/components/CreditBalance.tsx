@@ -5,7 +5,7 @@ import { queryClient } from "../lib/hooks/queryClient";
 import { createCheckoutSession } from "../lib/api";
 import { useState } from "preact/hooks";
 
-export default function CreditBalance() {
+function CreditBalanceInner() {
   const { data, isLoading } = useCredits();
   const [redirecting, setRedirecting] = useState(false);
 
@@ -23,7 +23,6 @@ export default function CreditBalance() {
   };
 
   return (
-    <QueryClientProvider client={queryClient}>
     <div
       style={{
         background: "#141209",
@@ -94,6 +93,13 @@ export default function CreditBalance() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function CreditBalance() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <CreditBalanceInner />
     </QueryClientProvider>
   );
 }
