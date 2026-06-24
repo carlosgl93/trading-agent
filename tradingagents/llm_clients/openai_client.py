@@ -40,6 +40,10 @@ _PASSTHROUGH_KWARGS = (
     "api_key", "callbacks", "http_client", "http_async_client",
     # OpenRouter (and other proxies) require custom HTTP headers
     "default_headers",
+    # OpenAI-compatible providers may accept extra body params (e.g. MiniMax reasoning_split).
+    # `extra_body` is the right channel — `model_kwargs` would merge into the top-level
+    # request payload and trigger "unexpected keyword argument" errors.
+    "extra_body",
 )
 
 # Provider base URLs and API key env vars
@@ -50,6 +54,7 @@ _PROVIDER_CONFIG = {
     "glm": ("https://api.z.ai/api/paas/v4/", "ZHIPU_API_KEY"),
     "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "ollama": ("http://localhost:11434/v1", None),
+    "minimax": ("https://api.minimax.io/v1", "MINIMAX_API_KEY"),
 }
 
 

@@ -34,6 +34,7 @@ FREE_MODELS = [
 ]
 
 PAID_MODELS = [
+    "minimax/MiniMax-M3",
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v3.2",
 ] + FREE_MODELS
@@ -49,7 +50,7 @@ _COMPRESS_PROMPT = (
     "3. Market analyst: give 3 numbers + 1 trend sentence. Nothing more.\n"
     "4. Fundamentals analyst: give 4 key numbers (P/E, revenue, debt, growth).\n"
     "5. When pass data to next agent: summarize first. No copy-paste big blocks.\n"
-    "6. Portfolio Manager: make final decision. State rating and 3 reasons. Done.\n"
+    "6. Portfolio Manager: this is the FINAL report shown to the user. No length cap, no compression. Write a complete, detailed analysis. State rating, full reasoning, and 3-5 reasons. Quality over brevity.\n"
     "Me no want big essay. Me want small, dense, useful summary. Caveman speak ok."
 )
 
@@ -102,18 +103,30 @@ def _fmt_elapsed(seconds: float) -> str:
 
 def _build_config(model: str, *, parallel: bool = True, debate_rounds: int = 1) -> dict:
     cfg = {**DEFAULT_CONFIG}
-    cfg.update({
-        "llm_provider": "openrouter",
-        "deep_think_llm": model,
-        "quick_think_llm": model,
-        "max_debate_rounds": debate_rounds,
-        "max_risk_discuss_rounds": debate_rounds,
-        "parallel_analysts": parallel,
-        "default_headers": {
-            "HTTP-Referer": os.environ.get("SITE_URL", "http://localhost:4321"),
-            "X-Title": os.environ.get("OPENROUTER_SITE_NAME", "TradingAgents POC"),
-        },
-    })
+    if model.startswith("minimax/"):
+        # MiniMax direct API (OpenAI-compatible) — uses MINIMAX_API_KEY secret
+        cfg.update({
+            "llm_provider": "minimax",
+            "deep_think_llm": model.split("/", 1)[1],
+            "quick_think_llm": model.split("/", 1)[1],
+            "max_debate_rounds": debate_rounds,
+            "max_risk_discuss_rounds": debate_rounds,
+            "parallel_analysts": parallel,
+            "extra_body": {"reasoning_split": True},
+        })
+    else:
+        cfg.update({
+            "llm_provider": "openrouter",
+            "deep_think_llm": model,
+            "quick_think_llm": model,
+            "max_debate_rounds": debate_rounds,
+            "max_risk_discuss_rounds": debate_rounds,
+            "parallel_analysts": parallel,
+            "default_headers": {
+                "HTTP-Referer": os.environ.get("SITE_URL", "http://localhost:4321"),
+                "X-Title": os.environ.get("OPENROUTER_SITE_NAME", "TradingAgents POC"),
+            },
+        })
     return cfg
 
 

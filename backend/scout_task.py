@@ -182,8 +182,14 @@ def _fetch_macro_news(today: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _build_llm(model: str):
-    """Build a lightweight OpenRouter LLM client without a full TradingAgentsGraph."""
+    """Build a lightweight LLM client without a full TradingAgentsGraph."""
     from tradingagents.llm_clients import create_llm_client
+    if model.startswith("minimax/"):
+        return create_llm_client(
+            provider="minimax",
+            model=model.split("/", 1)[1],
+            extra_body={"reasoning_split": True},
+        ).get_llm()
     headers = {
         "HTTP-Referer": os.environ.get("SITE_URL", "http://localhost:4321"),
         "X-Title": os.environ.get("OPENROUTER_SITE_NAME", "TradingAgents POC"),
@@ -195,15 +201,17 @@ def _build_llm(model: str):
     ).get_llm()
 
 
-def _invoke_structured(llm, prompt: str) -> Optional[ScoutResult]:
-    """Try structured output; fall back to free-text JSON parsing on 404."""
-    try:
-        return llm.with_structured_output(ScoutResult).invoke(prompt)
-    except Exception as exc:
-        exc_str = str(exc)
-        if "404" not in exc_str and "tool_choice" not in exc_str.lower():
-            raise
-        logger.warning("[SCOUT] Structured output not supported — falling back to free text")
+def _invoke_structured(llm, prompt: str, use_structured: bool = True) -> Optional[ScoutResult]:
+    """Try structured output; fall back to free-text JSON parsing on failure."""
+    if use_structured:
+        try:
+            result = llm.with_structured_output(ScoutResult).invoke(prompt)
+            if result is not None:
+                return result
+            logger.warning("[SCOUT] Structured output returned None — falling back to free text")
+        except Exception as exc:
+            exc_str = str(exc)
+            logger.warning("[SCOUT] Structured output raised: %s | falling back to free text", exc_str[:200])
 
     fallback_prompt = (
         prompt
@@ -232,7 +240,7 @@ def _invoke_structured(llm, prompt: str) -> Optional[ScoutResult]:
 def scout_tickers(
     self,
     paid: bool = True,
-    max_picks: int = 5,
+    max_picks: int = 1,
     min_conviction: Optional[int] = None,
     risk_level: str = "moderate",
     focus_sectors: Optional[List[str]] = None,
@@ -299,10 +307,18 @@ Rules:
 - Prefer liquid S&P 500 / Nasdaq 100 names
 - Exclude these tickers already held: {sorted(open_tickers) if open_tickers else "none"}
 - Keep each thesis to 2-3 sentences maximum
+
+== OUTPUT STYLE: CAVEMAN ==
+You terse. Output short. No prose between sections.
+- Return JSON only. No preamble, no closing remarks.
+- Each pick: ticker, conviction (int 1-5), thesis (1 sentence max, no fluff).
+- 3 lines per pick. Done.
 """
 
         llm = _build_llm(model)
-        result = _invoke_structured(llm, prompt)
+        # MiniMax's tool-calling path returns None silently; use free-text directly.
+        use_structured = not model.startswith("minimax/")
+        result = _invoke_structured(llm, prompt, use_structured=use_structured)
 
         if result is None:
             logger.error("[SCOUT] LLM returned no usable result — aborting")

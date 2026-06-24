@@ -21,8 +21,7 @@ kill_timeout = '30s'
 
 [processes]
   app = 'uvicorn backend.main:app --host 0.0.0.0 --port 8000'
-  redis = "redis-server --appendonly no --save '' --maxmemory 100mb --maxmemory-policy allkeys-lru --bind 0.0.0.0 --protected-mode no"
-  worker = 'celery -A backend.celery_app worker --loglevel=info --concurrency=1 -Q analysis,default --without-mingle --without-gossip --without-heartbeat'
+  worker = 'celery -A backend.celery_app worker --loglevel=info --concurrency=1 -Q analysis,default --without-mingle --without-gossip --without-heartbeat --max-memory-per-child=200000'
 
 [[services]]
   protocol = 'tcp'
@@ -59,3 +58,12 @@ kill_timeout = '30s'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
+  processes = ['app']
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
+  processes = ['worker']

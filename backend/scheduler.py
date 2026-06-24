@@ -26,7 +26,7 @@ celery_app.conf.beat_schedule = {
         "task": "backend.scout_task.scout_tickers",
         # Mon–Fri at 14:00 UTC = 9:00 AM ET (before market open)
         "schedule": crontab(hour=14, minute=0, day_of_week="mon-fri"),
-        "kwargs": {"paid": True, "max_picks": 5, "min_conviction": 3},
+        "kwargs": {"paid": True, "max_picks": 1, "min_conviction": 3},
     },
     "analyze-tickers-daily": {
         "task": "backend.scheduler.run_ticker_loop",

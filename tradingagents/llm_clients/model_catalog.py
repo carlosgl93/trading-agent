@@ -100,6 +100,14 @@ MODEL_OPTIONS: ProviderModeOptions = {
         ],
     },
     # OpenRouter: fetched dynamically. Azure: any deployed model name.
+    "minimax": {
+        "quick": [
+            ("MiniMax M3 - MiniMax's M3 model via direct API", "MiniMax-M3"),
+        ],
+        "deep": [
+            ("MiniMax M3 - MiniMax's M3 model via direct API", "MiniMax-M3"),
+        ],
+    },
     "ollama": {
         "quick": [
             ("Qwen3:latest (8B, local)", "qwen3:latest"),

@@ -21,6 +21,7 @@ from tradingagents.agents.schemas import (
     render_trader_proposal,
 )
 from tradingagents.agents.trader.trader import create_trader
+from tradingagents.agents.utils.structured import bind_structured
 
 
 # ---------------------------------------------------------------------------
@@ -230,3 +231,68 @@ class TestResearchManagerAgent:
         rm = create_research_manager(llm)
         result = rm(_make_rm_state())
         assert result["investment_plan"] == plain_response
+
+
+# ---------------------------------------------------------------------------
+# bind_structured: provider-aware skip list (MiniMax M3 hangs on tool-calling
+# schema; the PM hang seen in prod is a silent None from the structured path).
+# ---------------------------------------------------------------------------
+
+
+class TestBindStructuredSkipList:
+    def test_minimax_model_name_skips_structured_binding(self):
+        """MiniMax M3 silently returns None from with_structured_output, which
+        makes the PM hang waiting for a real response. Skip the binding entirely
+        so we go straight to free-text generation."""
+        from tradingagents.agents.schemas import TraderProposal
+
+        llm = MagicMock()
+        llm.model_name = "minimax/MiniMax-M3"
+        llm.with_structured_output = MagicMock()
+        result = bind_structured(llm, TraderProposal, "Trader")
+        assert result is None
+        llm.with_structured_output.assert_not_called()
+
+    def test_openai_model_name_uses_structured_binding(self):
+        from tradingagents.agents.schemas import TraderProposal
+
+        llm = MagicMock()
+        llm.model_name = "gpt-5"
+        result = bind_structured(llm, TraderProposal, "Trader")
+        # Returns the structured wrapper from the underlying mock.
+        assert result is not None
+        llm.with_structured_output.assert_called_once()
+
+    def test_unrelated_prefix_does_not_skip(self):
+        from tradingagents.agents.schemas import TraderProposal
+
+        llm = MagicMock()
+        llm.model_name = "openai/gpt-4.1"
+        result = bind_structured(llm, TraderProposal, "Trader")
+        assert result is not None
+
+    def test_missing_model_name_treated_as_non_skip(self):
+        """Defensive: if a mock or unusual LLM has no model_name, fall through
+        to the standard try/except path rather than blanket-skipping."""
+        from tradingagents.agents.schemas import TraderProposal
+
+        llm = MagicMock(spec=[])  # no model_name attribute
+        result = bind_structured(llm, TraderProposal, "Trader")
+        # spec=[] means with_structured_output also missing → AttributeError path
+        assert result is None
+
+    def test_trader_agent_skips_structured_for_minimax_and_uses_freetext(self):
+        """End-to-end: when the LLM is MiniMax, the trader renders free-text
+        and never calls with_structured_output."""
+        plain_response = (
+            "**Action**: Hold\n\nBalanced setup.\n\n"
+            "FINAL TRANSACTION PROPOSAL: **HOLD**"
+        )
+        llm = MagicMock()
+        llm.model_name = "minimax/MiniMax-M3"
+        llm.with_structured_output = MagicMock()
+        llm.invoke.return_value = MagicMock(content=plain_response)
+        trader = create_trader(llm)
+        result = trader(_make_trader_state())
+        assert result["trader_investment_plan"] == plain_response
+        llm.with_structured_output.assert_not_called()

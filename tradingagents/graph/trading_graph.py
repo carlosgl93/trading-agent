@@ -162,6 +162,13 @@ class TradingAgentsGraph:
                 headers = {"HTTP-Referer": referer, "X-Title": title}
             kwargs["default_headers"] = headers
 
+        elif provider == "minimax":
+            # MiniMax wants reasoning_split nested under extra_body in the request.
+            # `model_kwargs` would merge into top-level kwargs and break the call.
+            extra_body = self.config.get("extra_body")
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+
         return kwargs
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:

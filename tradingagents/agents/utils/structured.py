@@ -28,12 +28,47 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+# Providers whose ``with_structured_output`` call silently hangs or returns
+# ``None`` instead of raising.  For these we skip the binding entirely and
+# rely on the free-text fallback path, which uses ``llm.invoke(prompt)``
+# directly.  Detection is by the canonical ``model_name`` prefix used in
+# ``PAID_MODELS`` (``minimax/MiniMax-M3`` etc.) — see
+# ``memory/minimax-m3-integration-2026-06.md`` for the original incident.
+_STRUCTURED_OUTPUT_SKIP_PREFIXES = ("minimax/",)
+
+
+def _should_skip_structured_output(llm: Any) -> bool:
+    """Return True if this LLM's provider does not support structured output.
+
+    Uses ``str(getattr(...))`` rather than a direct ``startswith`` call so
+    that unittest ``MagicMock`` objects (whose attribute access returns
+    another MagicMock) do not accidentally match the prefix.
+    """
+    model_name = str(getattr(llm, "model_name", "") or "")
+    return any(model_name.startswith(p) for p in _STRUCTURED_OUTPUT_SKIP_PREFIXES)
+
+
 def bind_structured(llm: Any, schema: type[T], agent_name: str) -> Optional[Any]:
     """Return ``llm.with_structured_output(schema)`` or ``None`` if unsupported.
 
-    Logs a warning when the binding fails so the user understands the agent
-    will use free-text generation for every call instead of one-shot fallback.
+    Returns ``None`` (no binding attempted) for providers on the
+    ``_STRUCTURED_OUTPUT_SKIP_PREFIXES`` skip-list — these providers hang
+    or return ``None`` silently when asked to use tool-calling structured
+    output, so we go straight to free-text generation.
+
+    For all other providers, attempts the binding and returns ``None`` if
+    the binding itself raises ``NotImplementedError`` or ``AttributeError``,
+    again logging a warning so the user understands the agent will use
+    free-text generation for every call instead of one-shot fallback.
     """
+    if _should_skip_structured_output(llm):
+        logger.warning(
+            "%s: provider model '%s' is on the structured-output skip-list; "
+            "using free-text generation for every call",
+            agent_name, getattr(llm, "model_name", "<unknown>"),
+        )
+        return None
+
     try:
         return llm.with_structured_output(schema)
     except (NotImplementedError, AttributeError) as exc:

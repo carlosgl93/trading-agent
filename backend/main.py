@@ -268,7 +268,7 @@ async def trigger_review(
 @app.post("/scout", tags=["analysis"], response_model=ScoutDispatched)
 async def trigger_scout(
     paid: bool = Query(True),
-    max_picks: int = Query(5, ge=1, le=10),
+    max_picks: int = Query(1, ge=1, le=10),
     min_conviction: Optional[int] = Query(None, ge=1, le=5),
     risk_level: str = Query("moderate"),
     focus_sectors: List[str] = Query(default=[]),
