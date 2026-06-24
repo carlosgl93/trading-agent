@@ -286,6 +286,7 @@ async def trigger_scout(
         focus_sectors=focus_sectors or None,
         time_horizon=time_horizon,
         style=style,
+        user_id=user_id,
     )
     return {"task_id": task.id, "paid": paid, "max_picks": max_picks,
             "min_conviction": resolved_conviction, "status": "scouting"}

@@ -26,7 +26,15 @@ celery_app.conf.beat_schedule = {
         "task": "backend.scout_task.scout_tickers",
         # Mon–Fri at 14:00 UTC = 9:00 AM ET (before market open)
         "schedule": crontab(hour=14, minute=0, day_of_week="mon-fri"),
-        "kwargs": {"paid": True, "max_picks": 1, "min_conviction": 3},
+        # SYSTEM_USER_ID from env attributes the auto-scout row to a real
+        # Supabase user so the UI filter (single-tenant POC) shows it.
+        # Manual scouts use the requesting user's id instead.
+        "kwargs": {
+            "paid": True,
+            "max_picks": 1,
+            "min_conviction": 3,
+            "user_id": os.environ.get("SYSTEM_USER_ID"),
+        },
     },
     "analyze-tickers-daily": {
         "task": "backend.scheduler.run_ticker_loop",

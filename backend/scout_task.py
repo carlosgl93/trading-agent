@@ -247,8 +247,16 @@ def scout_tickers(
     time_horizon: str = "medium",
     style: str = "any",
     _model_index: int = 0,
+    user_id: Optional[str] = None,
 ):
-    """Macro-to-micro autonomous scout. Picks tickers then chains analyze_and_trade."""
+    """Macro-to-micro autonomous scout. Picks tickers then chains analyze_and_trade.
+
+    ``user_id`` attributes the scout row and every chained analyze row so the
+    UI filter (``.eq("user_id", ...)``) can show them. Manual scouts come in
+    with the requesting user; the Celery Beat auto-scout reads
+    ``SYSTEM_USER_ID`` from env and passes it in so the system row is visible
+    to the same logged-in user on this single-tenant POC.
+    """
     today = str(date.today())
     models = _get_model_list(paid)
     model = models[_model_index % len(models)]
@@ -341,6 +349,7 @@ You terse. Output short. No prose between sections.
             macro_context=result.macro_context,
             picks=[p.model_dump() for p in picks],
             model_used=model,
+            user_id=user_id,
         )
 
         if picks:
@@ -348,7 +357,7 @@ You terse. Output short. No prose between sections.
             from backend.tasks import analyze_and_trade
             tickers = [p.ticker.upper() for p in picks]
             steps = celery_chain(*[
-                analyze_and_trade.si(t, today, _seq_pos=i, _seq_tickers=tickers, paid=paid)
+                analyze_and_trade.si(t, today, _seq_pos=i, _seq_tickers=tickers, paid=paid, user_id=user_id)
                 for i, t in enumerate(tickers)
             ])
             steps.delay()
@@ -392,6 +401,7 @@ You terse. Output short. No prose between sections.
                     "time_horizon": time_horizon,
                     "style": style,
                     "_model_index": next_index,
+                    "user_id": user_id,
                 },
             )
 
