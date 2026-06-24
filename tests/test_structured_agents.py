@@ -253,6 +253,33 @@ class TestBindStructuredSkipList:
         assert result is None
         llm.with_structured_output.assert_not_called()
 
+    def test_minimax_model_name_without_prefix_still_skips(self):
+        """Regression: ``tasks.py`` strips the ``minimax/`` prefix via
+        ``model.split("/", 1)[1]`` before constructing the LLM. Detection must
+        fall back to base-URL or substring (case-insensitive) match so the
+        skip still fires when the prefix is gone."""
+        from tradingagents.agents.schemas import TraderProposal
+
+        llm = MagicMock()
+        llm.model_name = "MiniMax-M3"  # no prefix
+        llm.openai_api_base = "https://api.minimax.io/v1"
+        llm.with_structured_output = MagicMock()
+        result = bind_structured(llm, TraderProposal, "Trader")
+        assert result is None
+        llm.with_structured_output.assert_not_called()
+
+    def test_minimax_base_url_alone_is_enough(self):
+        """Base-URL match should be enough on its own — substring on model_name
+        is only a fallback for providers that don't set OpenAI-style attributes."""
+        from tradingagents.agents.schemas import TraderProposal
+
+        llm = MagicMock()
+        llm.model_name = "M3"  # generic name, would not match substring
+        llm.openai_api_base = "https://api.minimax.io/v1"
+        llm.with_structured_output = MagicMock()
+        result = bind_structured(llm, TraderProposal, "Trader")
+        assert result is None
+
     def test_openai_model_name_uses_structured_binding(self):
         from tradingagents.agents.schemas import TraderProposal
 
